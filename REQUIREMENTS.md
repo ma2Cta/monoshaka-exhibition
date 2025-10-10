@@ -104,6 +104,65 @@ CREATE INDEX idx_recordings_created_at ON recordings(created_at);
 - `duration`: 録音の長さ（秒）
 - `created_at`: 録音日時
 
+#### 2. playlists（プレイリスト）
+
+```sql
+CREATE TABLE playlists (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- インデックス
+CREATE INDEX idx_playlists_is_active ON playlists(is_active);
+```
+
+**カラム説明:**
+
+- `id`: プレイリストのユニーク ID
+- `name`: プレイリスト名
+- `is_active`: 現在有効なプレイリストかどうか（1つのみtrue）
+- `created_at`: 作成日時
+- `updated_at`: 更新日時
+
+**制約:**
+
+- `is_active` が `true` のプレイリストは1つのみ（トリガーで制御）
+
+#### 3. playlist_recordings（プレイリストと録音の関連）
+
+```sql
+CREATE TABLE playlist_recordings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  playlist_id UUID NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+  order_index INTEGER NOT NULL,
+  added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(playlist_id, recording_id),
+  UNIQUE(playlist_id, order_index)
+);
+
+-- インデックス
+CREATE INDEX idx_playlist_recordings_playlist_id ON playlist_recordings(playlist_id);
+CREATE INDEX idx_playlist_recordings_recording_id ON playlist_recordings(recording_id);
+CREATE INDEX idx_playlist_recordings_order ON playlist_recordings(playlist_id, order_index);
+```
+
+**カラム説明:**
+
+- `id`: レコードのユニーク ID
+- `playlist_id`: プレイリストID（外部キー）
+- `recording_id`: 録音ID（外部キー）
+- `order_index`: プレイリスト内での再生順序（0から開始）
+- `added_at`: プレイリストに追加された日時
+
+**制約:**
+
+- 同じプレイリストに同じ録音を重複して追加できない
+- 同じプレイリスト内で同じorder_indexを持つことはできない
+
 ### Row Level Security (RLS) ポリシー
 
 ```sql
@@ -117,6 +176,33 @@ CREATE POLICY "recordings_insert_all" ON recordings
   FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "recordings_delete_admin" ON recordings
+  FOR DELETE USING (auth.role() = 'authenticated');
+
+-- playlists: 全員読み取り可、管理者のみ作成・更新・削除可
+ALTER TABLE playlists ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "playlists_select_all" ON playlists
+  FOR SELECT USING (true);
+
+CREATE POLICY "playlists_insert_admin" ON playlists
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "playlists_update_admin" ON playlists
+  FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "playlists_delete_admin" ON playlists
+  FOR DELETE USING (auth.role() = 'authenticated');
+
+-- playlist_recordings: 全員読み取り可、管理者のみ作成・削除可
+ALTER TABLE playlist_recordings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "playlist_recordings_select_all" ON playlist_recordings
+  FOR SELECT USING (true);
+
+CREATE POLICY "playlist_recordings_insert_admin" ON playlist_recordings
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "playlist_recordings_delete_admin" ON playlist_recordings
   FOR DELETE USING (auth.role() = 'authenticated');
 ```
 
@@ -188,18 +274,27 @@ CREATE POLICY "recordings_delete_admin" ON recordings
 
 #### 機能
 
-1. **自動再生**
+1. **プレイリスト選択**
+
+   - ページ上部にプレイリスト選択UI（ドロップダウンまたはボタン）
+   - デフォルトでは有効なプレイリスト（is_active=true）を使用
+   - プレイリストを切り替えると、そのプレイリストの録音のみを再生
+   - プレイリストが空の場合は「録音がありません」と表示
+
+2. **自動再生**
 
    - ページ読み込み時に自動的に再生開始
-   - 全ての録音を連続再生
+   - 選択されたプレイリストの録音を順序通りに連続再生
    - 最後の録音が終わったら最初に戻る（無限ループ）
 
-2. **リアルタイム更新**
+3. **リアルタイム更新**
 
    - 10 秒ごとに新しい録音をチェック
    - 新録音があれば次のループから自動的に追加
+   - プレイリストの変更（録音の追加・削除・並び替え）も自動反映
 
-3. **UI 表示**
+4. **UI 表示**
+   - 現在選択中のプレイリスト名
    - 現在再生中の番号（例: 3 / 25）
    - シンプルで視認性の高いデザイン
    - フルスクリーン表示推奨
@@ -214,11 +309,12 @@ CREATE POLICY "recordings_delete_admin" ON recordings
 
 ```typescript
 // 疑似コード
-1. 全録音を created_at 昇順で取得
-2. Signed URL を生成
-3. audio要素で順次再生
-4. onEnded イベントで次の音声へ
-5. 10秒ごとに録音リストを再取得
+1. 有効なプレイリストまたは選択されたプレイリストを取得
+2. プレイリストの録音を order_index 昇順で取得
+3. Signed URL を生成
+4. audio要素で順次再生
+5. onEnded イベントで次の音声へ
+6. 10秒ごとにプレイリストの録音リストを再取得
 ```
 
 ---
@@ -258,6 +354,37 @@ CREATE POLICY "recordings_delete_admin" ON recordings
 - 総録音数
 - 総再生時間
 - 本日の録音数
+
+##### 3-3. プレイリスト管理
+
+- **プレイリスト一覧表示**
+
+  - プレイリスト名、作成日時を表示
+  - 現在有効なプレイリストを視覚的に強調表示
+  - 各プレイリストに含まれる録音数を表示
+
+- **プレイリストの作成**
+
+  - 「新規プレイリスト作成」ボタン
+  - プレイリスト名を入力
+
+- **プレイリストの削除**
+
+  - 個別削除ボタン
+  - 確認ダイアログ表示
+  - 関連するplaylist_recordingsも自動削除（CASCADE）
+
+- **有効なプレイリストの切り替え**
+
+  - 「有効にする」ボタン
+  - 他のプレイリストのis_activeは自動的にfalseに
+
+- **プレイリスト詳細画面**（`/admin/playlists/[id]`）
+
+  - プレイリストに含まれる録音の一覧表示
+  - 録音の再生、削除機能
+  - 録音の並び替え機能（ドラッグ&ドロップまたは上下ボタン）
+  - 「録音を追加」ボタンで全録音から選択して追加
 
 ---
 

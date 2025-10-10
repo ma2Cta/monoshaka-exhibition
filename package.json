@@ -7,7 +7,10 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "db:migrate": "npx supabase db push",
+    "db:start": "npx supabase start",
+    "db:stop": "npx supabase stop",
+    "db:reset": "npx supabase db reset",
+    "db:migrate:local": "npx supabase migration up",
     "db:migrate:prod": "npx supabase db push --linked"
   },
   "dependencies": {

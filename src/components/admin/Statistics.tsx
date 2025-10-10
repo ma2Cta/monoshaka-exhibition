@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { getRecordings } from '@/lib/supabase';
+import { useMemo } from 'react';
+import { Recording } from '@/lib/types';
 
 interface Stats {
   totalCount: number;
@@ -10,61 +10,43 @@ interface Stats {
   averageDuration: number;
 }
 
-export default function Statistics() {
-  const [stats, setStats] = useState<Stats>({
-    totalCount: 0,
-    totalDuration: 0,
-    todayCount: 0,
-    averageDuration: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+interface StatisticsProps {
+  recordings?: Recording[];
+  isLoading?: boolean;
+}
 
-  useEffect(() => {
-    loadStats();
-    // 30秒ごとに統計情報を更新
-    const interval = setInterval(loadStats, 30000);
-    return () => clearInterval(interval);
-  }, []);
+export default function Statistics({ recordings = [], isLoading = false }: StatisticsProps) {
+  const stats = useMemo<Stats>(() => {
+    // 今日の日付（JST）
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  async function loadStats() {
-    try {
-      const recordings = await getRecordings();
+    let totalDuration = 0;
+    let todayCount = 0;
 
-      // 今日の日付（JST）
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    recordings.forEach((recording) => {
+      // 再生時間の合計
+      if (recording.duration) {
+        totalDuration += recording.duration;
+      }
 
-      let totalDuration = 0;
-      let todayCount = 0;
+      // 本日の録音数
+      const recordingDate = new Date(recording.created_at);
+      recordingDate.setHours(0, 0, 0, 0);
+      if (recordingDate.getTime() === today.getTime()) {
+        todayCount++;
+      }
+    });
 
-      recordings.forEach((recording) => {
-        // 再生時間の合計
-        if (recording.duration) {
-          totalDuration += recording.duration;
-        }
+    const averageDuration = recordings.length > 0 ? totalDuration / recordings.length : 0;
 
-        // 本日の録音数
-        const recordingDate = new Date(recording.created_at);
-        recordingDate.setHours(0, 0, 0, 0);
-        if (recordingDate.getTime() === today.getTime()) {
-          todayCount++;
-        }
-      });
-
-      const averageDuration = recordings.length > 0 ? totalDuration / recordings.length : 0;
-
-      setStats({
-        totalCount: recordings.length,
-        totalDuration,
-        todayCount,
-        averageDuration,
-      });
-    } catch (err) {
-      console.error('統計情報の取得に失敗しました:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+    return {
+      totalCount: recordings.length,
+      totalDuration,
+      todayCount,
+      averageDuration,
+    };
+  }, [recordings]);
 
   function formatDuration(seconds: number) {
     const hours = Math.floor(seconds / 3600);

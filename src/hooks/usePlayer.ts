@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getRecordings, getRecordingUrl } from '@/lib/supabase';
+import { getRecordings, getRecordingUrl, getPlaylistRecordings } from '@/lib/supabase';
 import { Recording } from '@/lib/types';
 
 interface UsePlayerReturn {
@@ -12,7 +12,12 @@ interface UsePlayerReturn {
   needsUserInteraction: boolean;
 }
 
-export const usePlayer = (): UsePlayerReturn => {
+interface UsePlayerOptions {
+  playlistId?: string | null;
+}
+
+export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
+  const { playlistId } = options || {};
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -26,22 +31,100 @@ export const usePlayer = (): UsePlayerReturn => {
   const recordingsRef = useRef<Recording[]>([]);
   const isSwitching = useRef(false);
 
+  // 再生開始時のプレイリストのスナップショット
+  const playbackSnapshotRef = useRef<Recording[] | null>(null);
+  // 再生が完了したかどうかのフラグ
+  const hasCompletedPlaybackRef = useRef<boolean>(false);
+
   // 参照を常に最新に保つ
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
   useEffect(() => {
-    recordingsRef.current = recordings;
+    // スナップショットが存在する場合はスナップショットを使用
+    // 存在しない場合は通常のrecordingsを使用
+    if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
+      recordingsRef.current = playbackSnapshotRef.current;
+    } else {
+      recordingsRef.current = recordings;
+    }
   }, [recordings]);
 
   // 録音リストを取得
   const fetchRecordings = useCallback(async () => {
     try {
-      const data = await getRecordings();
+      // プレイリストIDが指定されている場合はプレイリストの録音を取得
+      // 指定されていない場合は全録音を取得
+      const data = playlistId
+        ? await getPlaylistRecordings(playlistId)
+        : await getRecordings();
+
       const oldRecordings = recordingsRef.current;
 
-      // 削除された録音を検出
+      // 再生中の場合はスナップショットを保持し続ける
+      if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
+        // 再生中のスナップショット内の録音が削除されていないかチェック
+        const currentRecording = playbackSnapshotRef.current[currentIndexRef.current];
+        const newIds = new Set(data.map(r => r.id));
+        const wasCurrentDeleted = currentRecording && !newIds.has(currentRecording.id);
+
+        // 現在再生中の録音が削除された場合のみ処理
+        if (wasCurrentDeleted) {
+          console.log('現在再生中の録音が削除されました。次の録音にスキップします。');
+
+          // スナップショットから削除された録音を除外
+          const updatedSnapshot = playbackSnapshotRef.current.filter(r => newIds.has(r.id));
+
+          if (updatedSnapshot.length === 0) {
+            // すべて削除された場合は再生終了
+            console.log('すべての録音が削除されました。');
+            playbackSnapshotRef.current = null;
+            hasCompletedPlaybackRef.current = true;
+            setRecordings(data);
+            setCurrentIndex(0);
+            setIsPlaying(false);
+
+            if (currentAudioRef.current) {
+              currentAudioRef.current.pause();
+              currentAudioRef.current.src = '';
+            }
+            if (nextAudioRef.current) {
+              nextAudioRef.current.pause();
+              nextAudioRef.current.src = '';
+            }
+          } else {
+            // スナップショットを更新し、インデックスを調整
+            playbackSnapshotRef.current = updatedSnapshot;
+            const newIndex = currentIndexRef.current >= updatedSnapshot.length ? 0 : currentIndexRef.current;
+            setCurrentIndex(newIndex);
+
+            // 現在の再生を停止
+            if (currentAudioRef.current) {
+              currentAudioRef.current.pause();
+              currentAudioRef.current.src = '';
+            }
+            if (nextAudioRef.current) {
+              nextAudioRef.current.pause();
+              nextAudioRef.current.src = '';
+            }
+          }
+        }
+
+        // 表示用のrecordingsは更新しない（スナップショットを表示）
+        setError(null);
+        return;
+      }
+
+      // プレイリストが完了した後、新しいプレイリストを取得
+      if (hasCompletedPlaybackRef.current) {
+        console.log('新しいプレイリストを取得しました:', data.length);
+        playbackSnapshotRef.current = [...data];
+        hasCompletedPlaybackRef.current = false;
+        setCurrentIndex(0);
+      }
+
+      // 再生していない場合は通常通り更新
       const newIds = new Set(data.map(r => r.id));
 
       // 現在再生中の録音が削除されたかチェック
@@ -88,12 +171,20 @@ export const usePlayer = (): UsePlayerReturn => {
       console.error('録音取得エラー:', err);
       setError(err instanceof Error ? err.message : '録音の取得に失敗しました');
     }
-  }, []);
+  }, [playlistId]);
 
   // 次のトラックに移動
   const moveToNextTrack = useCallback(() => {
     if (recordingsRef.current.length === 0) return;
     const nextIndex = (currentIndexRef.current + 1) % recordingsRef.current.length;
+
+    // プレイリストが一周した場合（インデックスが0に戻る場合）
+    if (nextIndex === 0 && playbackSnapshotRef.current) {
+      console.log('プレイリストが一周しました。新しいプレイリストに更新します。');
+      hasCompletedPlaybackRef.current = true;
+      playbackSnapshotRef.current = null;
+    }
+
     setCurrentIndex(nextIndex);
   }, []);
 
@@ -258,8 +349,13 @@ export const usePlayer = (): UsePlayerReturn => {
   const startPlayback = useCallback(() => {
     if (recordings.length === 0) return;
 
+    // 再生開始時にプレイリストのスナップショットを作成
+    playbackSnapshotRef.current = [...recordings];
+    hasCompletedPlaybackRef.current = false;
+    console.log('プレイリストのスナップショットを作成しました:', playbackSnapshotRef.current.length);
+
     setNeedsUserInteraction(false);
-  }, [recordings.length]);
+  }, [recordings]);
 
   // クリーンアップ
   useEffect(() => {

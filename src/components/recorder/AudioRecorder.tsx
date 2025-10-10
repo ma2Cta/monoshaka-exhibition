@@ -2,7 +2,7 @@
 
 import { useRecorder } from '@/hooks/useRecorder';
 import { useRef, useEffect, useState } from 'react';
-import { uploadRecording } from '@/lib/supabase';
+import { uploadRecording, getActivePlaylist, addRecordingToPlaylist } from '@/lib/supabase';
 
 export default function AudioRecorder() {
   const {
@@ -10,6 +10,8 @@ export default function AudioRecorder() {
     recordedBlob,
     recordedUrl,
     duration,
+    transcription,
+    isSpeechSupported,
     error,
     startRecording,
     stopRecording,
@@ -57,7 +59,27 @@ export default function AudioRecorder() {
     setUploadError(null);
 
     try {
-      await uploadRecording(recordedBlob, duration);
+      // 録音をアップロード（文字起こしも含む）
+      const recording = await uploadRecording(recordedBlob, duration, transcription || undefined);
+      console.log('Recording uploaded:', recording);
+
+      // 有効なプレイリストを取得
+      const activePlaylist = await getActivePlaylist();
+      console.log('Active playlist:', activePlaylist);
+
+      // 有効なプレイリストがあれば、その録音を追加
+      if (activePlaylist) {
+        try {
+          await addRecordingToPlaylist(activePlaylist.id, recording.id);
+          console.log('Recording added to active playlist');
+        } catch (playlistErr) {
+          // プレイリストへの追加が失敗しても、録音自体は成功しているので続行
+          console.warn('プレイリストへの追加に失敗しましたが、録音は保存されました:', playlistErr);
+        }
+      } else {
+        console.log('No active playlist found, skipping playlist addition');
+      }
+
       setUploadState('success');
     } catch (err) {
       console.error('アップロードエラー:', err);
@@ -187,6 +209,31 @@ export default function AudioRecorder() {
             className="w-full"
           />
 
+          {/* 文字起こし結果の表示 */}
+          {transcription && transcription.trim().length > 0 ? (
+            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+              <h3 className="font-semibold text-gray-700">文字起こし結果:</h3>
+              <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">
+                {transcription}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-700">
+              <p className="font-semibold mb-1">文字起こしができませんでした</p>
+              <p className="text-xs mb-2">
+                ・お使いのブラウザが音声認識に対応していない可能性があります<br />
+                ・録音中に音声が検出されなかった可能性があります<br />
+                ・ネットワーク接続の問題の可能性があります<br />
+                ・文字起こしなしでも録音は保存できます
+              </p>
+              {!isSpeechSupported && (
+                <p className="text-xs font-semibold mt-2 pt-2 border-t border-yellow-300">
+                  💡 Chrome、Edge、Safariブラウザでの利用を推奨します
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-center gap-4">
             <button
               onClick={handleUpload}
@@ -258,6 +305,13 @@ export default function AudioRecorder() {
             <li>録音を再生して確認</li>
             <li>問題なければ「送信する」ボタン、やり直す場合は「やり直す」ボタン</li>
           </ol>
+          <div className="mt-4 pt-4 border-t border-gray-300">
+            <p className="text-xs text-gray-500">
+              <span className="font-semibold">💡 文字起こし機能について:</span><br />
+              音声の文字起こし機能は、Chrome、Edge、Safariブラウザで最適に動作します。<br />
+              Arcブラウザなど一部のブラウザでは正常に動作しない場合があります。
+            </p>
+          </div>
         </div>
       )}
     </div>
