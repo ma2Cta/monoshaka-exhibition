@@ -1,8 +1,16 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { usePlayer } from '@/hooks/usePlayer';
+import { getPlaylists, getActivePlaylist } from '@/lib/supabase';
+import { Playlist } from '@/lib/types';
 
 export default function LoopPlayer() {
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [selectedPlaylistName, setSelectedPlaylistName] = useState<string>('');
+  const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
+
   const {
     recordings,
     currentIndex,
@@ -11,11 +19,69 @@ export default function LoopPlayer() {
     totalCount,
     startPlayback,
     needsUserInteraction
-  } = usePlayer();
+  } = usePlayer({ playlistId: selectedPlaylistId });
+
+  // プレイリスト一覧を取得し、有効なプレイリストを初期選択
+  useEffect(() => {
+    loadPlaylists();
+  }, []);
+
+  async function loadPlaylists() {
+    try {
+      setIsLoadingPlaylists(true);
+      const [allPlaylists, activePlaylist] = await Promise.all([
+        getPlaylists(),
+        getActivePlaylist(),
+      ]);
+      setPlaylists(allPlaylists);
+
+      // 有効なプレイリストがあればそれを選択、なければ最初のプレイリスト
+      if (activePlaylist) {
+        setSelectedPlaylistId(activePlaylist.id);
+        setSelectedPlaylistName(activePlaylist.name);
+      } else if (allPlaylists.length > 0) {
+        setSelectedPlaylistId(allPlaylists[0].id);
+        setSelectedPlaylistName(allPlaylists[0].name);
+      }
+    } catch (err) {
+      console.error('プレイリストの取得に失敗:', err);
+    } finally {
+      setIsLoadingPlaylists(false);
+    }
+  }
+
+  function handlePlaylistChange(playlistId: string) {
+    const playlist = playlists.find((p) => p.id === playlistId);
+    if (playlist) {
+      setSelectedPlaylistId(playlistId);
+      setSelectedPlaylistName(playlist.name);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 flex items-center justify-center p-8">
       <div className="w-full max-w-4xl">
+        {/* プレイリスト選択UI */}
+        {!isLoadingPlaylists && playlists.length > 0 && (
+          <div className="mb-6 flex items-center justify-center gap-4">
+            <label htmlFor="playlist-select" className="text-white text-lg font-semibold">
+              プレイリスト:
+            </label>
+            <select
+              id="playlist-select"
+              value={selectedPlaylistId || ''}
+              onChange={(e) => handlePlaylistChange(e.target.value)}
+              className="px-4 py-2 rounded-lg bg-white/20 backdrop-blur text-white border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors"
+            >
+              {playlists.map((playlist) => (
+                <option key={playlist.id} value={playlist.id} className="bg-gray-800">
+                  {playlist.name} {playlist.is_active && '(有効)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* 再生開始ボタン（ユーザーインタラクション必要時） */}
         {needsUserInteraction && totalCount > 0 && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
@@ -59,6 +125,11 @@ export default function LoopPlayer() {
             <h1 className="text-5xl font-bold text-white mb-4">
               音声ループ再生
             </h1>
+            {selectedPlaylistName && (
+              <p className="text-2xl text-white/90 mb-2 font-semibold">
+                {selectedPlaylistName}
+              </p>
+            )}
             <p className="text-xl text-white/80">
               録音された声が連続再生されています
             </p>

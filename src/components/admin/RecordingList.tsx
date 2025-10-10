@@ -2,19 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { Recording } from '@/lib/types';
-import { getRecordings, getRecordingUrl, deleteRecording } from '@/lib/supabase';
+import { getRecordingUrl, deleteRecording } from '@/lib/supabase';
 
-export default function RecordingList() {
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+interface RecordingListProps {
+  recordings?: Recording[];
+  onUpdate?: () => void | Promise<void>;
+}
+
+export default function RecordingList({ recordings: propRecordings, onUpdate }: RecordingListProps = {}) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [expandedTranscription, setExpandedTranscription] = useState<string | null>(null);
+
+  const recordings = propRecordings || [];
 
   useEffect(() => {
-    loadRecordings();
-
     // クリーンアップ
     return () => {
       if (audioElement) {
@@ -23,21 +26,6 @@ export default function RecordingList() {
       }
     };
   }, [audioElement]);
-
-  async function loadRecordings() {
-    try {
-      setIsLoading(true);
-      setError('');
-      const data = await getRecordings();
-      // 管理画面では新しい順に表示
-      setRecordings(data.reverse());
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '録音の取得に失敗しました';
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   async function handleDelete(id: string, filePath: string) {
     if (!confirm('この録音を削除してもよろしいですか？')) {
@@ -57,8 +45,12 @@ export default function RecordingList() {
         setPlayingId(null);
       }
 
-      setRecordings((prev) => prev.filter((r) => r.id !== id));
       alert('削除しました');
+
+      // 更新コールバックがあれば呼び出す
+      if (onUpdate) {
+        await onUpdate();
+      }
     } catch (err) {
       console.error('削除エラー:', err);
       const message = err instanceof Error ? err.message : '不明なエラー';
@@ -82,8 +74,6 @@ export default function RecordingList() {
     }
 
     try {
-      setIsLoading(true);
-
       // すべての録音を削除
       for (const recording of recordings) {
         await deleteRecording(recording.id, recording.file_path);
@@ -96,15 +86,20 @@ export default function RecordingList() {
       }
       setPlayingId(null);
 
-      setRecordings([]);
       alert('すべての録音を削除しました');
+
+      // 更新コールバックがあれば呼び出す
+      if (onUpdate) {
+        await onUpdate();
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '不明なエラー';
       alert(`削除に失敗しました: ${message}`);
-      // エラーが発生した場合は再読み込み
-      await loadRecordings();
-    } finally {
-      setIsLoading(false);
+
+      // 更新コールバックがあれば呼び出す
+      if (onUpdate) {
+        await onUpdate();
+      }
     }
   }
 
@@ -159,22 +154,6 @@ export default function RecordingList() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  if (isLoading && recordings.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <div className="text-gray-600">読み込み中...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 text-red-600 p-4 rounded-md">
-        エラー: {error}
-      </div>
-    );
-  }
-
   if (recordings.length === 0) {
     return (
       <div className="text-center py-8">
@@ -189,7 +168,7 @@ export default function RecordingList() {
         <h2 className="text-xl font-bold">録音一覧（{recordings.length}件）</h2>
         <button
           onClick={handleDeleteAll}
-          disabled={isLoading || recordings.length === 0}
+          disabled={recordings.length === 0}
           className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           すべて削除
@@ -207,6 +186,9 @@ export default function RecordingList() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   再生時間
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  文字起こし
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   操作
                 </th>
@@ -220,6 +202,29 @@ export default function RecordingList() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatDuration(recording.duration)}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    {recording.transcription ? (
+                      <div>
+                        <div className="max-w-md">
+                          <p className={`text-sm ${expandedTranscription === recording.id ? '' : 'line-clamp-2'}`}>
+                            {recording.transcription}
+                          </p>
+                        </div>
+                        {recording.transcription.length > 100 && (
+                          <button
+                            onClick={() => setExpandedTranscription(
+                              expandedTranscription === recording.id ? null : recording.id
+                            )}
+                            className="text-blue-600 hover:text-blue-800 text-xs mt-1"
+                          >
+                            {expandedTranscription === recording.id ? '閉じる' : 'もっと見る'}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 italic">なし</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm space-x-2">
                     <button

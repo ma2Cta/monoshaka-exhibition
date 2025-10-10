@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { useSpeechRecognition } from './useSpeechRecognition';
 
 export type RecorderState = 'idle' | 'recording' | 'paused' | 'stopped';
 
@@ -7,6 +8,9 @@ interface UseRecorderReturn {
   recordedBlob: Blob | null;
   recordedUrl: string | null;
   duration: number;
+  transcription: string;
+  isTranscribing: boolean;
+  isSpeechSupported: boolean;
   error: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => void;
@@ -19,6 +23,16 @@ export const useRecorder = (): UseRecorderReturn => {
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+
+  // 音声認識フックを使用
+  const {
+    transcript,
+    isListening,
+    isSupported,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -86,6 +100,9 @@ export const useRecorder = (): UseRecorderReturn => {
       setState('recording');
       startTimeRef.current = Date.now();
 
+      // 音声認識を開始
+      startListening();
+
       // 録音時間のタイマー
       timerRef.current = setInterval(() => {
         const elapsed = (Date.now() - startTimeRef.current) / 1000;
@@ -106,13 +123,15 @@ export const useRecorder = (): UseRecorderReturn => {
       );
       setState('idle');
     }
-  }, []);
+  }, [startListening]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-  }, []);
+    // 音声認識を停止
+    stopListening();
+  }, [stopListening]);
 
   const reset = useCallback(() => {
     // URLをクリーンアップ
@@ -136,13 +155,19 @@ export const useRecorder = (): UseRecorderReturn => {
     setDuration(0);
     setError(null);
     chunksRef.current = [];
-  }, [recordedUrl]);
+
+    // 文字起こしをリセット
+    resetTranscript();
+  }, [recordedUrl, resetTranscript]);
 
   return {
     state,
     recordedBlob,
     recordedUrl,
     duration,
+    transcription: transcript,
+    isTranscribing: isListening,
+    isSpeechSupported: isSupported,
     error,
     startRecording,
     stopRecording,
