@@ -1,7 +1,8 @@
 'use client';
 
 import { useRecorder } from '@/hooks/useRecorder';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
+import { uploadRecording } from '@/lib/supabase';
 
 export default function AudioRecorder() {
   const {
@@ -16,6 +17,8 @@ export default function AudioRecorder() {
   } = useRecorder();
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // 録音URLが変更されたら、オーディオ要素に設定して自動再生
   useEffect(() => {
@@ -47,6 +50,33 @@ export default function AudioRecorder() {
     }
   };
 
+  const handleUpload = async () => {
+    if (!recordedBlob) return;
+
+    setUploadState('uploading');
+    setUploadError(null);
+
+    try {
+      await uploadRecording(recordedBlob, duration);
+      setUploadState('success');
+    } catch (err) {
+      console.error('アップロードエラー:', err);
+      setUploadError(err instanceof Error ? err.message : 'アップロードに失敗しました');
+      setUploadState('error');
+    }
+  };
+
+  const handleRetry = () => {
+    setUploadState('idle');
+    setUploadError(null);
+  };
+
+  const handleNewRecording = () => {
+    reset();
+    setUploadState('idle');
+    setUploadError(null);
+  };
+
   return (
     <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
       {/* タイトル */}
@@ -64,6 +94,22 @@ export default function AudioRecorder() {
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
           <p className="font-bold">エラー</p>
           <p>{error}</p>
+        </div>
+      )}
+
+      {/* アップロードエラーメッセージ */}
+      {uploadError && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          <p className="font-bold">アップロードエラー</p>
+          <p>{uploadError}</p>
+        </div>
+      )}
+
+      {/* アップロード成功メッセージ */}
+      {uploadState === 'success' && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded text-center">
+          <p className="text-2xl font-bold mb-2">ありがとうございました!</p>
+          <p>録音がアップロードされました。</p>
         </div>
       )}
 
@@ -129,7 +175,7 @@ export default function AudioRecorder() {
       </div>
 
       {/* 録音プレビュー */}
-      {state === 'stopped' && recordedUrl && (
+      {state === 'stopped' && recordedUrl && uploadState === 'idle' && (
         <div className="bg-white rounded-lg shadow-md p-8 space-y-4">
           <h2 className="text-xl font-bold text-gray-800 text-center">
             録音を確認
@@ -143,8 +189,14 @@ export default function AudioRecorder() {
 
           <div className="flex justify-center gap-4">
             <button
+              onClick={handleUpload}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+            >
+              送信する
+            </button>
+            <button
               onClick={handleDownload}
-              className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+              className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-lg transition-colors"
             >
               ダウンロード
             </button>
@@ -158,18 +210,56 @@ export default function AudioRecorder() {
         </div>
       )}
 
+      {/* アップロード中 */}
+      {uploadState === 'uploading' && (
+        <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p className="text-lg font-semibold text-gray-700">アップロード中...</p>
+          </div>
+        </div>
+      )}
+
+      {/* アップロードエラー時のリトライボタン */}
+      {uploadState === 'error' && (
+        <div className="bg-white rounded-lg shadow-md p-8 text-center space-y-4">
+          <button
+            onClick={handleRetry}
+            className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
+      {/* アップロード成功後 */}
+      {uploadState === 'success' && (
+        <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <button
+            onClick={handleNewRecording}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+          >
+            もう一度録音する
+          </button>
+        </div>
+      )}
+
       {/* 使い方 */}
-      <div className="bg-gray-50 rounded-lg p-6">
-        <h3 className="font-bold text-gray-800 mb-2">使い方</h3>
-        <ol className="list-decimal list-inside space-y-1 text-gray-600 text-sm">
-          <li>「録音開始」ボタンをクリック</li>
-          <li>マイクへのアクセスを許可</li>
-          <li>小説の一節を読み上げる</li>
-          <li>「録音停止」ボタンをクリック（最大60秒）</li>
-          <li>録音を再生して確認</li>
-          <li>問題なければダウンロード、やり直す場合は「やり直す」ボタン</li>
-        </ol>
-      </div>
+      {uploadState !== 'success' && (
+        <div className="bg-gray-50 rounded-lg p-6">
+          <h3 className="font-bold text-gray-800 mb-2">使い方</h3>
+          <ol className="list-decimal list-inside space-y-1 text-gray-600 text-sm">
+            <li>「録音開始」ボタンをクリック</li>
+            <li>マイクへのアクセスを許可</li>
+            <li>小説の一節を読み上げる</li>
+            <li>「録音停止」ボタンをクリック（最大60秒）</li>
+            <li>録音を再生して確認</li>
+            <li>問題なければ「送信する」ボタン、やり直す場合は「やり直す」ボタン</li>
+          </ol>
+        </div>
+      )}
     </div>
   );
 }
