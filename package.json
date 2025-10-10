@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
-    "build:vercel": "npm run db:migrate:prod && next build --turbopack",
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "npx supabase db push",

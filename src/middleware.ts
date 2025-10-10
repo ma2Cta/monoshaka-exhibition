@@ -5,7 +5,6 @@ export function middleware(request: NextRequest) {
   // /admin配下のみBASIC認証を適用
   if (request.nextUrl.pathname.startsWith('/admin')) {
     const basicAuth = request.headers.get('authorization');
-    const url = request.nextUrl;
 
     // 環境変数から認証情報を取得
     const validUsername = process.env.ADMIN_USERNAME || 'admin';

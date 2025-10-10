@@ -7,17 +7,35 @@ export interface Recording {
   created_at: string;
 }
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       recordings: {
         Row: Recording;
-        Insert: Omit<Recording, 'id' | 'created_at'> & {
+        Insert: {
           id?: string;
+          file_path: string;
+          duration: number | null;
           created_at?: string;
         };
-        Update: Partial<Omit<Recording, 'id' | 'created_at'>>;
+        Update: {
+          file_path?: string;
+          duration?: number | null;
+        };
+        Relationships: [];
       };
     };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
   };
-}
+};

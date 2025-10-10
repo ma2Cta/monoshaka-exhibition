@@ -22,7 +22,7 @@ export default function RecordingList() {
         audioElement.src = '';
       }
     };
-  }, []);
+  }, [audioElement]);
 
   async function loadRecordings() {
     try {
@@ -31,8 +31,9 @@ export default function RecordingList() {
       const data = await getRecordings();
       // 管理画面では新しい順に表示
       setRecordings(data.reverse());
-    } catch (err: any) {
-      setError(err.message || '録音の取得に失敗しました');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '録音の取得に失敗しました';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -58,9 +59,10 @@ export default function RecordingList() {
 
       setRecordings((prev) => prev.filter((r) => r.id !== id));
       alert('削除しました');
-    } catch (err: any) {
+    } catch (err) {
       console.error('削除エラー:', err);
-      alert(`削除に失敗しました: ${err.message}`);
+      const message = err instanceof Error ? err.message : '不明なエラー';
+      alert(`削除に失敗しました: ${message}`);
     } finally {
       setDeletingId(null);
     }
@@ -96,8 +98,9 @@ export default function RecordingList() {
 
       setRecordings([]);
       alert('すべての録音を削除しました');
-    } catch (err: any) {
-      alert(`削除に失敗しました: ${err.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '不明なエラー';
+      alert(`削除に失敗しました: ${message}`);
       // エラーが発生した場合は再読み込み
       await loadRecordings();
     } finally {
