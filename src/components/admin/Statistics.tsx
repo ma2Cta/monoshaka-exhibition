@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Recording } from '@/lib/types';
 import { getRecordings } from '@/lib/supabase';
 
 interface Stats {

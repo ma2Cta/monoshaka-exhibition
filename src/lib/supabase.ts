@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Database } from './types';
+import { Database, Recording } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -8,7 +8,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabaseの環境変数が設定されていません');
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
  * 録音をSupabase Storageにアップロードし、データベースにレコードを作成する
@@ -36,12 +36,14 @@ export async function uploadRecording(blob: Blob, duration: number) {
   }
 
   // 2. データベースにレコードを作成
+  const insertData: Database['public']['Tables']['recordings']['Insert'] = {
+    file_path: uploadData.path,
+    duration,
+  };
+
   const { data: recordData, error: recordError } = await supabase
     .from('recordings')
-    .insert({
-      file_path: uploadData.path,
-      duration,
-    })
+    .insert(insertData)
     .select()
     .single();
 
@@ -58,7 +60,7 @@ export async function uploadRecording(blob: Blob, duration: number) {
  * すべての録音を取得する（作成日時の昇順）
  * @returns 録音のリスト
  */
-export async function getRecordings() {
+export async function getRecordings(): Promise<Recording[]> {
   const { data, error } = await supabase
     .from('recordings')
     .select('*')
@@ -68,7 +70,7 @@ export async function getRecordings() {
     throw new Error(`取得エラー: ${error.message}`);
   }
 
-  return data;
+  return data || [];
 }
 
 /**

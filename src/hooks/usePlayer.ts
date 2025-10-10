@@ -42,7 +42,6 @@ export const usePlayer = (): UsePlayerReturn => {
       const oldRecordings = recordingsRef.current;
 
       // 削除された録音を検出
-      const oldIds = new Set(oldRecordings.map(r => r.id));
       const newIds = new Set(data.map(r => r.id));
 
       // 現在再生中の録音が削除されたかチェック
