@@ -30,6 +30,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const currentIndexRef = useRef<number>(0);
   const recordingsRef = useRef<Recording[]>([]);
   const isSwitching = useRef(false);
+  const hasStartedPlayback = useRef<boolean>(false);
+  const switchToNextTrackRef = useRef<(() => void) | null>(null);
 
   // 再生開始時のプレイリストのスナップショット
   const playbackSnapshotRef = useRef<Recording[] | null>(null);
@@ -228,12 +230,43 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // 現在のAudioを停止
       if (currentAudioRef.current) {
         currentAudioRef.current.pause();
+        // イベントリスナーをクリア
+        currentAudioRef.current.onended = null;
+        currentAudioRef.current.onerror = null;
+        currentAudioRef.current.onplaying = null;
+        currentAudioRef.current.onpause = null;
       }
 
       // 参照を入れ替え
       const temp = currentAudioRef.current;
       currentAudioRef.current = nextAudioRef.current;
       nextAudioRef.current = temp;
+
+      // 新しいcurrentAudioにイベントリスナーを設定
+      if (currentAudioRef.current) {
+        currentAudioRef.current.onended = () => {
+          if (switchToNextTrackRef.current) {
+            switchToNextTrackRef.current();
+          }
+        };
+
+        currentAudioRef.current.onerror = (e) => {
+          console.error('Audio error:', e);
+          setTimeout(() => {
+            if (switchToNextTrackRef.current) {
+              switchToNextTrackRef.current();
+            }
+          }, 100);
+        };
+
+        currentAudioRef.current.onplaying = () => {
+          setIsPlaying(true);
+        };
+
+        currentAudioRef.current.onpause = () => {
+          setIsPlaying(false);
+        };
+      }
 
       // 新しいcurrentAudioを再生
       currentAudioRef.current.play().catch((err) => {
@@ -247,6 +280,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     isSwitching.current = false;
   }, [moveToNextTrack, preloadNextTrack]);
+
+  // switchToNextTrackの参照を常に最新に保つ
+  useEffect(() => {
+    switchToNextTrackRef.current = switchToNextTrack;
+  }, [switchToNextTrack]);
 
   // Audio要素にイベントリスナーを設定
   const setupAudioListeners = useCallback((audio: HTMLAudioElement) => {
@@ -319,10 +357,19 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     preloadNextTrack(index);
   }, [setupAudioListeners, switchToNextTrack, preloadNextTrack]);
 
-  // 初回ロード時に録音を取得
+  // 初回ロード時に録音を取得し、自動的にスナップショットを作成
   useEffect(() => {
     fetchRecordings();
   }, [fetchRecordings]);
+
+  // 録音が取得されたときにスナップショットを準備（再生はstartPlaybackで開始）
+  useEffect(() => {
+    if (recordings.length > 0 && !playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
+      console.log('プレイリストのスナップショットを準備:', recordings.length);
+      playbackSnapshotRef.current = [...recordings];
+      recordingsRef.current = [...recordings];
+    }
+  }, [recordings]);
 
   // 10秒ごとに録音リストを更新
   useEffect(() => {
@@ -337,25 +384,26 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     };
   }, [fetchRecordings]);
 
-  // currentIndexが変更されたら再生（ユーザーが開始した後のみ）
-  useEffect(() => {
-    if (needsUserInteraction) return;
-    if (recordings.length === 0) return;
-
-    playTrack(currentIndex);
-  }, [currentIndex, needsUserInteraction, recordings.length, playTrack]);
-
   // ユーザーインタラクション後に再生を開始
   const startPlayback = useCallback(() => {
     if (recordings.length === 0) return;
+    if (hasStartedPlayback.current) return;
 
-    // 再生開始時にプレイリストのスナップショットを作成
-    playbackSnapshotRef.current = [...recordings];
+    console.log('再生を開始します:', recordings.length);
+
+    // スナップショットがまだなければ作成
+    if (!playbackSnapshotRef.current) {
+      playbackSnapshotRef.current = [...recordings];
+      recordingsRef.current = [...recordings];
+    }
+
+    hasStartedPlayback.current = true;
     hasCompletedPlaybackRef.current = false;
-    console.log('プレイリストのスナップショットを作成しました:', playbackSnapshotRef.current.length);
-
     setNeedsUserInteraction(false);
-  }, [recordings]);
+
+    // 最初のトラックを再生
+    playTrack(0);
+  }, [recordings, playTrack]);
 
   // クリーンアップ
   useEffect(() => {

@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import { Recording } from '@/lib/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2, Music, Clock, Calendar, TrendingUp } from 'lucide-react';
 
 interface Stats {
   totalCount: number;
@@ -66,10 +68,13 @@ export default function Statistics({ recordings = [], isLoading = false }: Stati
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-white p-6 rounded-lg shadow-sm animate-pulse">
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-            <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-          </div>
+          <Card key={i}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-center h-24">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     );
@@ -77,31 +82,51 @@ export default function Statistics({ recordings = [], isLoading = false }: Stati
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">総録音数</h3>
-        <p className="text-3xl font-bold text-gray-900">{stats.totalCount}</p>
-        <p className="text-xs text-gray-500 mt-1">件</p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">総録音数</CardTitle>
+          <Music className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{stats.totalCount}</div>
+          <p className="text-xs text-muted-foreground">件</p>
+        </CardContent>
+      </Card>
 
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">総再生時間</h3>
-        <p className="text-3xl font-bold text-gray-900">
-          {formatDuration(stats.totalDuration)}
-        </p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">総再生時間</CardTitle>
+          <Clock className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatDuration(stats.totalDuration)}
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">本日の録音数</h3>
-        <p className="text-3xl font-bold text-gray-900">{stats.todayCount}</p>
-        <p className="text-xs text-gray-500 mt-1">件</p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">本日の録音数</CardTitle>
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{stats.todayCount}</div>
+          <p className="text-xs text-muted-foreground">件</p>
+        </CardContent>
+      </Card>
 
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">平均再生時間</h3>
-        <p className="text-3xl font-bold text-gray-900">
-          {formatDuration(stats.averageDuration)}
-        </p>
-      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">平均再生時間</CardTitle>
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {formatDuration(stats.averageDuration)}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
