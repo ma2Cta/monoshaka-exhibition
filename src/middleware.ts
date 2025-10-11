@@ -1,36 +1,59 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export function middleware(request: NextRequest) {
-  // /admin配下のみBASIC認証を適用
-  if (request.nextUrl.pathname.startsWith('/admin')) {
-    const basicAuth = request.headers.get('authorization');
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
 
-    // 環境変数から認証情報を取得
-    const validUsername = process.env.ADMIN_USERNAME || 'admin';
-    const validPassword = process.env.ADMIN_PASSWORD || 'password';
-
-    if (basicAuth) {
-      const authValue = basicAuth.split(' ')[1];
-      const [username, password] = atob(authValue).split(':');
-
-      if (username === validUsername && password === validPassword) {
-        return NextResponse.next();
-      }
-    }
-
-    // 認証が必要な場合は401を返す
-    return new NextResponse('Authentication required', {
-      status: 401,
-      headers: {
-        'WWW-Authenticate': 'Basic realm="Secure Area"',
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
+          response = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
       },
-    });
+    }
+  );
+
+  // セッションを更新（必要に応じてリフレッシュ）
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // ログインページへのアクセスは常に許可
+  if (request.nextUrl.pathname === '/login') {
+    // すでにログイン済みの場合はホームにリダイレクト
+    if (user) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    return response;
   }
 
-  return NextResponse.next();
+  // 未認証の場合はログインページにリダイレクト
+  if (!user) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  return response;
 }
 
 export const config = {
-  matcher: '/admin/:path*',
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

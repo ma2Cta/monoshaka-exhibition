@@ -1,24 +1,27 @@
 'use client';
 
 import PlaylistManager from '@/components/admin/PlaylistManager';
+import Header from '@/components/layout/Header';
 
 export default function AdminPage() {
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-8">
-        {/* ヘッダー */}
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">管理画面</h1>
-          <p className="text-muted-foreground mt-2">
-            プレイリストと録音データを管理します
-          </p>
-        </div>
+    <>
+      <Header title="管理画面" />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-8">
+          {/* 説明 */}
+          <div>
+            <p className="text-muted-foreground">
+              プレイリストと録音データを管理します
+            </p>
+          </div>
 
-        {/* プレイリスト管理 */}
-        <section>
-          <PlaylistManager />
-        </section>
+          {/* プレイリスト管理 */}
+          <section>
+            <PlaylistManager />
+          </section>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
