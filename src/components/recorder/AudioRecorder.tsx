@@ -5,6 +5,7 @@ import { useRef, useEffect, useState } from 'react';
 import { uploadRecording, getActivePlaylist, addRecordingToPlaylist } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Loader2, Mic, Square, Send, CheckCircle2 } from 'lucide-react';
+import type { Recording } from '@/lib/types';
 
 export default function AudioRecorder() {
   const {
@@ -45,13 +46,13 @@ export default function AudioRecorder() {
 
     try {
       // 録音をアップロード（文字起こしも含む）
-      const recording = await uploadRecording(recordedBlob, duration, transcription || undefined);
+      const recording: Recording = await uploadRecording(recordedBlob, duration, transcription || undefined);
 
       // 有効なプレイリストを取得
       const activePlaylist = await getActivePlaylist();
 
       // 有効なプレイリストがあれば、その録音を追加
-      if (activePlaylist) {
+      if (activePlaylist && recording) {
         try {
           await addRecordingToPlaylist(activePlaylist.id, recording.id);
         } catch (playlistErr) {

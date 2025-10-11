@@ -8,6 +8,7 @@ import {
 } from '@/lib/supabase';
 import RecordingList from '@/components/admin/RecordingList';
 import Statistics from '@/components/admin/Statistics';
+import Header from '@/components/layout/Header';
 import type { Recording } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,26 +52,34 @@ export default function PlaylistDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <>
+        <Header title="プレイリスト詳細" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Alert variant="destructive">
-          <AlertDescription>エラー: {error}</AlertDescription>
-        </Alert>
-      </div>
+      <>
+        <Header title="プレイリスト詳細" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Alert variant="destructive">
+            <AlertDescription>エラー: {error}</AlertDescription>
+          </Alert>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <>
+      <Header title="プレイリスト詳細" />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="space-y-6">
         {/* ヘッダー */}
         <div>
@@ -108,5 +117,6 @@ export default function PlaylistDetailPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
