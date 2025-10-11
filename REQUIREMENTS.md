@@ -270,7 +270,7 @@ CREATE POLICY "playlist_recordings_delete_admin" ON playlist_recordings
 
 #### URL
 
-- `/play` または `/loop`
+- `/play`
 
 #### 機能
 

@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react';
 import { Recording } from '@/lib/types';
 import { getRecordingUrl, deleteRecording } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Play, Square, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 
 interface RecordingListProps {
   recordings?: Recording[];
@@ -14,6 +19,9 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [expandedTranscription, setExpandedTranscription] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [selectedRecording, setSelectedRecording] = useState<{ id: string; filePath: string } | null>(null);
 
   const recordings = propRecordings || [];
 
@@ -27,25 +35,26 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
     };
   }, [audioElement]);
 
-  async function handleDelete(id: string, filePath: string) {
-    if (!confirm('この録音を削除してもよろしいですか？')) {
-      return;
-    }
+  function openDeleteDialog(id: string, filePath: string) {
+    setSelectedRecording({ id, filePath });
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!selectedRecording) return;
 
     try {
-      setDeletingId(id);
-      console.log('削除開始:', { id, filePath });
-      await deleteRecording(id, filePath);
-      console.log('削除成功:', id);
+      setDeletingId(selectedRecording.id);
+      await deleteRecording(selectedRecording.id, selectedRecording.filePath);
 
       // 削除した録音が再生中だった場合は停止
-      if (playingId === id && audioElement) {
+      if (playingId === selectedRecording.id && audioElement) {
         audioElement.pause();
         audioElement.src = '';
         setPlayingId(null);
       }
 
-      alert('削除しました');
+      setDeleteDialogOpen(false);
 
       // 更新コールバックがあれば呼び出す
       if (onUpdate) {
@@ -53,26 +62,13 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
       }
     } catch (err) {
       console.error('削除エラー:', err);
-      const message = err instanceof Error ? err.message : '不明なエラー';
-      alert(`削除に失敗しました: ${message}`);
     } finally {
       setDeletingId(null);
+      setSelectedRecording(null);
     }
   }
 
-  async function handleDeleteAll() {
-    if (!confirm(`すべての録音（${recordings.length}件）を削除してもよろしいですか？この操作は取り消せません。`)) {
-      return;
-    }
-
-    const confirmMessage = recordings.length > 10
-      ? '本当にすべて削除しますか？もう一度確認してください。'
-      : null;
-
-    if (confirmMessage && !confirm(confirmMessage)) {
-      return;
-    }
-
+  async function confirmDeleteAll() {
     try {
       // すべての録音を削除
       for (const recording of recordings) {
@@ -86,16 +82,14 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
       }
       setPlayingId(null);
 
-      alert('すべての録音を削除しました');
+      setDeleteAllDialogOpen(false);
 
       // 更新コールバックがあれば呼び出す
       if (onUpdate) {
         await onUpdate();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : '不明なエラー';
-      alert(`削除に失敗しました: ${message}`);
-
+      console.error('削除エラー:', err);
       // 更新コールバックがあれば呼び出す
       if (onUpdate) {
         await onUpdate();
@@ -154,103 +148,161 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  if (recordings.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <div className="text-gray-600">録音データがありません</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">録音一覧（{recordings.length}件）</h2>
-        <button
-          onClick={handleDeleteAll}
-          disabled={recordings.length === 0}
-          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          すべて削除
-        </button>
-      </div>
-
-      <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  作成日時
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  再生時間
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  文字起こし
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {recordings.map((recording) => (
-                <tr key={recording.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(recording.created_at)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatDuration(recording.duration)}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {recording.transcription ? (
-                      <div>
+    <Card>
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <CardTitle>録音一覧（{recordings.length}件）</CardTitle>
+          {recordings.length > 0 && (
+            <Button
+              onClick={() => setDeleteAllDialogOpen(true)}
+              variant="destructive"
+              size="sm"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              すべて削除
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {recordings.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            録音データがありません
+          </div>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>作成日時</TableHead>
+                  <TableHead>再生時間</TableHead>
+                  <TableHead>文字起こし</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recordings.map((recording) => (
+                  <TableRow key={recording.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDate(recording.created_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDuration(recording.duration)}
+                    </TableCell>
+                    <TableCell>
+                      {recording.transcription ? (
                         <div className="max-w-md">
                           <p className={`text-sm ${expandedTranscription === recording.id ? '' : 'line-clamp-2'}`}>
                             {recording.transcription}
                           </p>
+                          {recording.transcription.length > 100 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setExpandedTranscription(
+                                expandedTranscription === recording.id ? null : recording.id
+                              )}
+                              className="h-auto p-0 mt-1 text-xs cursor-pointer"
+                            >
+                              {expandedTranscription === recording.id ? (
+                                <>
+                                  <ChevronUp className="mr-1 h-3 w-3" />
+                                  閉じる
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="mr-1 h-3 w-3" />
+                                  もっと見る
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </div>
-                        {recording.transcription.length > 100 && (
-                          <button
-                            onClick={() => setExpandedTranscription(
-                              expandedTranscription === recording.id ? null : recording.id
-                            )}
-                            className="text-blue-600 hover:text-blue-800 text-xs mt-1"
-                          >
-                            {expandedTranscription === recording.id ? '閉じる' : 'もっと見る'}
-                          </button>
+                      ) : (
+                        <span className="text-muted-foreground italic">なし</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button
+                        onClick={() => handlePlay(recording.id, recording.file_path)}
+                        variant={playingId === recording.id ? "destructive" : "default"}
+                        size="sm"
+                      >
+                        {playingId === recording.id ? (
+                          <>
+                            <Square className="mr-1 h-3 w-3" />
+                            停止
+                          </>
+                        ) : (
+                          <>
+                            <Play className="mr-1 h-3 w-3" />
+                            再生
+                          </>
                         )}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 italic">なし</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm space-x-2">
-                    <button
-                      onClick={() => handlePlay(recording.id, recording.file_path)}
-                      className={`px-3 py-1 rounded-md transition-colors ${
-                        playingId === recording.id
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {playingId === recording.id ? '停止' : '再生'}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(recording.id, recording.file_path)}
-                      disabled={deletingId === recording.id}
-                      className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {deletingId === recording.id ? '削除中...' : '削除'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+                      </Button>
+                      <Button
+                        onClick={() => openDeleteDialog(recording.id, recording.file_path)}
+                        disabled={deletingId === recording.id}
+                        variant="destructive"
+                        size="sm"
+                      >
+                        {deletingId === recording.id ? (
+                          <>
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            削除中...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            削除
+                          </>
+                        )}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+
+      {/* 削除確認ダイアログ */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>録音を削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この録音を削除してもよろしいですか？この操作は取り消せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+              削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* すべて削除確認ダイアログ */}
+      <AlertDialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>すべての録音を削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              すべての録音（{recordings.length}件）を削除してもよろしいですか？この操作は取り消せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteAll} className="bg-destructive hover:bg-destructive/90">
+              すべて削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
   );
 }
