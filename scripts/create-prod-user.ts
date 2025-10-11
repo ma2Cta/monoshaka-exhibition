@@ -16,7 +16,11 @@
  * USER_ID=admin PASSWORD=securepass123 npx tsx scripts/create-prod-user.ts
  */
 
+import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
+
+// .env.localファイルを読み込み
+config({ path: ".env.local" });
 
 // コマンドライン引数から取得(npm run経由の場合)
 const args = process.argv.slice(2);
