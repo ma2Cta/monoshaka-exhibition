@@ -38,7 +38,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const recordingsRef = useRef<Recording[]>([]);
   const isSwitching = useRef(false);
   const hasStartedPlayback = useRef<boolean>(false);
-  const switchToNextTrackRef = useRef<(() => void) | null>(null);
+  const switchToNextTrackRef = useRef<(() => Promise<void>) | null>(null);
+  const playTrackRef = useRef<((index: number) => Promise<void>) | null>(null);
 
   // 再生開始時のプレイリストのスナップショット
   const playbackSnapshotRef = useRef<Recording[] | null>(null);
@@ -212,8 +213,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         playbackSnapshotRef.current = [...data];
         recordingsRef.current = [...data];
         setRecordings(data);
-        hasCompletedPlaybackRef.current = false;
-        setCurrentIndex(0);
+        // hasCompletedPlaybackRefとindexの更新はswitchToNextTrackで行う
       } else {
         // 再生していない場合のみ更新
         setRecordings(data);
@@ -236,8 +236,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       console.log('プレイリストが一周しました。新しいプレイリストに更新します。');
       hasCompletedPlaybackRef.current = true;
       playbackSnapshotRef.current = null;
+      // 一周完了時はインデックスを更新しない（switchToNextTrackで処理）
+      return;
     }
 
+    currentIndexRef.current = nextIndex;
     setCurrentIndex(nextIndex);
   }, []);
 
@@ -273,10 +276,37 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   }, [setAudioSinkId]);
 
   // 次のトラックに切り替えて再生
-  const switchToNextTrack = useCallback(async () => {
+  const switchToNextTrack: () => Promise<void> = useCallback(async () => {
     if (isSwitching.current || recordingsRef.current.length === 0) return;
 
     isSwitching.current = true;
+
+    // プレイリスト一周完了フラグをチェック
+    if (hasCompletedPlaybackRef.current) {
+      // 新しいプレイリストが読み込まれるまで待つ
+      console.log('プレイリスト一周完了。新しいプレイリストの読み込みを待機中...');
+
+      // fetchRecordingsを呼び出して新しいプレイリストを取得
+      await fetchRecordings();
+
+      // 確実にインデックスを0にリセット
+      currentIndexRef.current = 0;
+      setCurrentIndex(0);
+
+      // フラグをリセット
+      hasCompletedPlaybackRef.current = false;
+
+      // 新しいプレイリストで最初のトラックを再生
+      if (recordingsRef.current.length > 0 && playTrackRef.current) {
+        console.log('新しいプレイリストで再生を再開:', recordingsRef.current.length, 'インデックス: 0');
+        // 少し待機してから再生（state更新が確実に反映されるように）
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await playTrackRef.current(0);
+      }
+
+      isSwitching.current = false;
+      return;
+    }
 
     // まずインデックスを更新
     moveToNextTrack();
@@ -335,7 +365,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     }
 
     isSwitching.current = false;
-  }, [moveToNextTrack, preloadNextTrack]);
+  }, [moveToNextTrack, preloadNextTrack, fetchRecordings]);
 
   // switchToNextTrackの参照を常に最新に保つ
   useEffect(() => {
@@ -416,6 +446,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // 次のトラックをプリロード
     preloadNextTrack(index);
   }, [setupAudioListeners, switchToNextTrack, preloadNextTrack, setAudioSinkId]);
+
+  // playTrackの参照を常に最新に保つ
+  useEffect(() => {
+    playTrackRef.current = playTrack;
+  }, [playTrack]);
 
   // 初回ロード時に録音を取得し、自動的にスナップショットを作成
   useEffect(() => {
