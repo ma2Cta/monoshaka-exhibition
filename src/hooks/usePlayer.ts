@@ -53,13 +53,17 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
       const hasMediaDevices = 'mediaDevices' in navigator;
       const hasSelectAudioOutput = hasMediaDevices && 'selectAudioOutput' in navigator.mediaDevices;
+      const hasEnumerateDevices = hasMediaDevices && 'enumerateDevices' in navigator.mediaDevices;
 
       console.log('Audio Output Devices API サポート確認:');
       console.log('  - setSinkId:', hasSetsinkId);
       console.log('  - mediaDevices:', hasMediaDevices);
       console.log('  - selectAudioOutput:', hasSelectAudioOutput);
+      console.log('  - enumerateDevices:', hasEnumerateDevices);
 
-      const supported = hasSetsinkId && hasMediaDevices && hasSelectAudioOutput;
+      // setSinkIdとenumerateDevicesの両方が使えればサポートありとする
+      // selectAudioOutputは必須ではない（代替UIで対応可能）
+      const supported = hasSetsinkId && hasMediaDevices && hasEnumerateDevices;
       console.log('  - 総合サポート:', supported);
 
       setAudioOutputSupported(supported);
@@ -110,16 +114,15 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
   // 音声出力デバイスを選択
   const selectAudioOutput = useCallback(async () => {
-    const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
-
-    if (!hasSetsinkId) {
-      console.warn('setSinkIdがこのブラウザでサポートされていません');
+    if (!audioOutputSupported) {
+      console.warn('音声出力デバイス選択がこのブラウザでサポートされていません');
       return;
     }
 
     try {
       // selectAudioOutputが利用可能な場合はそれを使用
       if ('selectAudioOutput' in navigator.mediaDevices) {
+        console.log('selectAudioOutputを使用してデバイス選択ダイアログを表示します');
         const device = await navigator.mediaDevices.selectAudioOutput();
         selectedAudioDeviceIdRef.current = device.deviceId;
         setCurrentAudioDevice(device.deviceId);
@@ -137,13 +140,16 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       } else {
         // selectAudioOutputが使えない場合はenumerateDevicesを使用
         // この場合、UIコンポーネント側でデバイス一覧を表示する必要がある
-        console.log('selectAudioOutputが利用できないため、enumerateDevicesを使用します');
+        console.log('selectAudioOutputが利用できないため、enumerateDevicesを使用してカスタムダイアログを表示します');
         const devices = await getAudioOutputDevices();
 
         if (devices.length > 0) {
+          console.log(`${devices.length}個の音声出力デバイスが見つかりました:`, devices.map(d => d.label || d.deviceId));
           // カスタムイベントを発行してUIに通知
           const event = new CustomEvent('audioOutputDeviceListAvailable', { detail: devices });
           window.dispatchEvent(event);
+        } else {
+          console.warn('音声出力デバイスが見つかりませんでした');
         }
       }
     } catch (err) {
@@ -155,7 +161,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         }
       }
     }
-  }, [setAudioSinkId, getAudioOutputDevices]);
+  }, [audioOutputSupported, setAudioSinkId, getAudioOutputDevices]);
 
   // デバイスIDを直接設定する関数（UI側から呼び出される）
   const setOutputDevice = useCallback(async (deviceId: string) => {
