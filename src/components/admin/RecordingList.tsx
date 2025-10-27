@@ -119,12 +119,14 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
       setPlayingId(null);
     };
 
-    audio.onerror = () => {
+    // 再生を試みる（onerrorは設定しない）
+    audio.play().catch((err) => {
+      console.error('再生開始エラー:', err);
+      // play()のPromiseが失敗した場合のみアラートを表示
       alert('再生に失敗しました');
       setPlayingId(null);
-    };
+    });
 
-    audio.play();
     setAudioElement(audio);
     setPlayingId(id);
   }

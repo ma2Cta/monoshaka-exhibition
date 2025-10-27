@@ -135,7 +135,15 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         setCurrentAudioDevice(device.deviceId);
         localStorage.setItem('audioOutputDeviceId', device.deviceId);
 
+        // デバイス名も保存
+        const deviceName = device.label || `デバイス ${device.deviceId.substring(0, 8)}...`;
+        localStorage.setItem('audioOutputDeviceName', deviceName);
+
         console.log(`選択されたデバイス: ${device.label} (${device.deviceId})`);
+
+        // UIに選択されたデバイスを通知
+        const nameEvent = new CustomEvent('audioOutputDeviceSelected', { detail: deviceName });
+        window.dispatchEvent(nameEvent);
 
         // 現在再生中のAudio要素に適用
         if (currentAudioRef.current) {

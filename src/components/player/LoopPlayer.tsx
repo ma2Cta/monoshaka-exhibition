@@ -60,6 +60,7 @@ export default function LoopPlayer() {
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
+  const [selectedDeviceName, setSelectedDeviceName] = useState<string>('デフォルト');
 
   const {
     recordings,
@@ -72,6 +73,7 @@ export default function LoopPlayer() {
     resetPlayback,
     selectAudioOutput,
     setOutputDevice,
+    currentAudioDevice,
     audioOutputSupported
   } = usePlayer({ playlistId: selectedPlaylistId });
 
@@ -108,6 +110,14 @@ export default function LoopPlayer() {
     setSelectedPlaylistId(playlistId);
   }
 
+  // 初回マウント時に保存されたデバイス名を復元
+  useEffect(() => {
+    const savedDeviceName = localStorage.getItem('audioOutputDeviceName');
+    if (savedDeviceName) {
+      setSelectedDeviceName(savedDeviceName);
+    }
+  }, []);
+
   // カスタムイベントでデバイス一覧を受け取る
   useEffect(() => {
     const handleDeviceList = (event: Event) => {
@@ -116,9 +126,16 @@ export default function LoopPlayer() {
       setShowDeviceList(true);
     };
 
+    const handleDeviceSelected = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      setSelectedDeviceName(customEvent.detail);
+    };
+
     window.addEventListener('audioOutputDeviceListAvailable', handleDeviceList);
+    window.addEventListener('audioOutputDeviceSelected', handleDeviceSelected);
     return () => {
       window.removeEventListener('audioOutputDeviceListAvailable', handleDeviceList);
+      window.removeEventListener('audioOutputDeviceSelected', handleDeviceSelected);
     };
   }, []);
 
@@ -128,8 +145,23 @@ export default function LoopPlayer() {
 
   async function handleDeviceSelect(deviceId: string) {
     await setOutputDevice(deviceId);
+    // 選択されたデバイス名を保存
+    const device = audioDevices.find(d => d.deviceId === deviceId);
+    if (device) {
+      const deviceName = device.label || `デバイス ${device.deviceId.substring(0, 8)}...`;
+      setSelectedDeviceName(deviceName);
+      localStorage.setItem('audioOutputDeviceName', deviceName);
+    }
     setShowDeviceList(false);
   }
+
+  // コンポーネントのアンマウント時に再生を停止
+  useEffect(() => {
+    return () => {
+      console.log('LoopPlayerコンポーネントがアンマウントされました。再生を停止します。');
+      resetPlayback();
+    };
+  }, [resetPlayback]);
 
   // 波形アニメーションの高さを固定（初回のみ生成）
   const waveHeights = useMemo(() => {
@@ -168,7 +200,7 @@ export default function LoopPlayer() {
             </div>
 
             {/* 音声出力デバイス選択ボタン */}
-            <div className="flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center gap-2">
               <Button
                 onClick={handleSelectAudioOutput}
                 variant="outline"
@@ -181,6 +213,12 @@ export default function LoopPlayer() {
                 音声出力デバイスを選択
                 {!audioOutputSupported && ' (未サポート)'}
               </Button>
+              {audioOutputSupported && currentAudioDevice && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Speaker className="h-3 w-3" />
+                  <span>選択中: {selectedDeviceName}</span>
+                </div>
+              )}
             </div>
           </div>
         )}
