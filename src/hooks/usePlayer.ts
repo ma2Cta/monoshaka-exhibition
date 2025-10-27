@@ -249,7 +249,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   }, []);
 
   // 次のトラックをプリロード
-  const preloadNextTrack = useCallback((currentIdx: number) => {
+  const preloadNextTrack = useCallback(async (currentIdx: number) => {
     if (recordingsRef.current.length === 0) return;
 
     const nextIndex = (currentIdx + 1) % recordingsRef.current.length;
@@ -267,12 +267,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         console.error('次のトラックのプリロードエラー:', e);
         // プリロードエラーの場合はスキップして次のトラックを試す
       };
-
-      // 音声出力デバイスを設定
-      setAudioSinkId(nextAudioRef.current).catch(err => {
-        console.error('プリロード用Audio要素のデバイス設定エラー:', err);
-      });
     }
+
+    // 毎回音声出力デバイスを設定（入れ替え後のAudio要素にも確実に設定）
+    await setAudioSinkId(nextAudioRef.current).catch(err => {
+      console.error('プリロード用Audio要素のデバイス設定エラー:', err);
+    });
 
     const url = getRecordingUrl(nextRecording.file_path);
     nextAudioRef.current.src = url;
@@ -280,7 +280,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   }, [setAudioSinkId]);
 
   // 次のトラックに切り替えて再生
-  const switchToNextTrack = useCallback(() => {
+  const switchToNextTrack = useCallback(async () => {
     if (isSwitching.current || recordingsRef.current.length === 0) return;
 
     isSwitching.current = true;
@@ -338,7 +338,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
       // さらに次をプリロード
       const nextIdx = (currentIndexRef.current + 1) % recordingsRef.current.length;
-      preloadNextTrack(nextIdx);
+      await preloadNextTrack(nextIdx);
     }
 
     isSwitching.current = false;
