@@ -53,7 +53,7 @@ export default function PlaylistDetailPage() {
   if (isLoading) {
     return (
       <>
-        <Header title="プレイリスト詳細" />
+        <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex justify-center items-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -66,7 +66,7 @@ export default function PlaylistDetailPage() {
   if (error) {
     return (
       <>
-        <Header title="プレイリスト詳細" />
+        <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Alert variant="destructive">
             <AlertDescription>エラー: {error}</AlertDescription>
@@ -78,7 +78,7 @@ export default function PlaylistDetailPage() {
 
   return (
     <>
-      <Header title="プレイリスト詳細" />
+      <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="space-y-6">
         {/* ヘッダー */}

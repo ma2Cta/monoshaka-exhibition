@@ -7,11 +7,10 @@ import { LogOut } from 'lucide-react';
 import Link from 'next/link';
 
 interface HeaderProps {
-  title?: string;
   showNav?: boolean;
 }
 
-export default function Header({ title, showNav = true }: HeaderProps) {
+export default function Header({ showNav = true }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();

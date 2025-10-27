@@ -4,7 +4,7 @@ import Header from '@/components/layout/Header';
 export default function RecordPage() {
   return (
     <>
-      <Header title="録音" />
+      <Header />
       <AudioRecorder />
     </>
   );
