@@ -41,6 +41,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const switchToNextTrackRef = useRef<(() => Promise<void>) | null>(null);
   const playTrackRef = useRef<((index: number) => Promise<void>) | null>(null);
 
+  // 事前計算された再生順序（インデックスの配列）
+  // 例: [0, 1, 2] → 録音0 → 録音1 → 録音2 の順で再生
+  const playbackOrderRef = useRef<number[]>([]);
+  // 現在の再生順序配列内の位置
+  const playbackPositionRef = useRef<number>(0);
+
   // 再生開始時のプレイリストのスナップショット
   const playbackSnapshotRef = useRef<Recording[] | null>(null);
   // 再生が完了したかどうかのフラグ
@@ -186,6 +192,14 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
+  // プレイリストの再生順序を事前計算
+  const buildPlaybackOrder = useCallback((recordings: Recording[]) => {
+    // 単純に0からrecordings.length-1までの配列を作成
+    const order = recordings.map((_, index) => index);
+    console.log('再生順序を計算しました:', order);
+    return order;
+  }, []);
+
   // 録音リストを取得
   const fetchRecordings = useCallback(async () => {
     try {
@@ -213,6 +227,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         playbackSnapshotRef.current = [...data];
         recordingsRef.current = [...data];
         setRecordings(data);
+
+        // 新しいプレイリストの再生順序を事前計算
+        playbackOrderRef.current = buildPlaybackOrder(data);
+        playbackPositionRef.current = 0;
+        console.log('新しい再生順序を設定:', playbackOrderRef.current);
+
         // hasCompletedPlaybackRefとindexの更新はswitchToNextTrackで行う
       } else {
         // 再生していない場合のみ更新
@@ -224,15 +244,17 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       console.error('録音取得エラー:', err);
       setError(err instanceof Error ? err.message : '録音の取得に失敗しました');
     }
-  }, [playlistId]);
+  }, [playlistId, buildPlaybackOrder]);
 
-  // 次のトラックに移動
+  // 次のトラックに移動（再生順序配列を使用）
   const moveToNextTrack = useCallback(() => {
-    if (recordingsRef.current.length === 0) return;
-    const nextIndex = (currentIndexRef.current + 1) % recordingsRef.current.length;
+    if (playbackOrderRef.current.length === 0) return;
 
-    // プレイリストが一周した場合（インデックスが0に戻る場合）
-    if (nextIndex === 0 && playbackSnapshotRef.current) {
+    // 次の再生位置を計算
+    const nextPosition = playbackPositionRef.current + 1;
+
+    // プレイリストが一周した場合（再生順序配列の最後に達した場合）
+    if (nextPosition >= playbackOrderRef.current.length) {
       console.log('プレイリストが一周しました。新しいプレイリストに更新します。');
       hasCompletedPlaybackRef.current = true;
       playbackSnapshotRef.current = null;
@@ -240,15 +262,37 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       return;
     }
 
-    currentIndexRef.current = nextIndex;
-    setCurrentIndex(nextIndex);
+    // 再生位置を更新
+    playbackPositionRef.current = nextPosition;
+    // 再生順序配列から実際のインデックスを取得
+    const actualIndex = playbackOrderRef.current[nextPosition];
+    currentIndexRef.current = actualIndex;
+    setCurrentIndex(actualIndex);
+
+    console.log(`次のトラックに移動: 再生位置 ${nextPosition}/${playbackOrderRef.current.length}, 実際のインデックス ${actualIndex}`);
   }, []);
 
-  // 次のトラックをプリロード
-  const preloadNextTrack = useCallback(async (currentIdx: number) => {
-    if (recordingsRef.current.length === 0) return;
+  // 次のトラックをプリロード（再生順序配列を参照）
+  const preloadNextTrack = useCallback(async () => {
+    // プレイリスト一周完了時はプリロードしない（古いプレイリストのファイルをロードしないため）
+    if (hasCompletedPlaybackRef.current) {
+      console.log('プレイリスト一周完了のため、プリロードをスキップします');
+      return;
+    }
 
-    const nextIndex = (currentIdx + 1) % recordingsRef.current.length;
+    if (playbackOrderRef.current.length === 0) return;
+
+    // 次の再生位置を取得
+    const nextPosition = playbackPositionRef.current + 1;
+
+    // 次の再生位置が再生順序配列の範囲外の場合（プレイリスト一周する場合）、プリロードしない
+    if (nextPosition >= playbackOrderRef.current.length) {
+      console.log('次のトラックがプレイリストの最後なので、プリロードをスキップします');
+      return;
+    }
+
+    // 再生順序配列から次の実際のインデックスを取得
+    const nextIndex = playbackOrderRef.current[nextPosition];
     const nextRecording = recordingsRef.current[nextIndex];
 
     if (!nextRecording) return;
@@ -273,6 +317,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     const url = getRecordingUrl(nextRecording.file_path);
     nextAudioRef.current.src = url;
     nextAudioRef.current.load();
+    console.log(`次のトラックをプリロード: 再生位置 ${nextPosition}/${playbackOrderRef.current.length}, 実際のインデックス ${nextIndex}`);
   }, [setAudioSinkId]);
 
   // 次のトラックに切り替えて再生
@@ -286,22 +331,34 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // 新しいプレイリストが読み込まれるまで待つ
       console.log('プレイリスト一周完了。新しいプレイリストの読み込みを待機中...');
 
+      // 古いプリロードをクリア（古いプレイリストのファイルが残っている可能性があるため）
+      if (nextAudioRef.current) {
+        nextAudioRef.current.pause();
+        nextAudioRef.current.src = '';
+        nextAudioRef.current.onended = null;
+        nextAudioRef.current.onerror = null;
+        console.log('プリロード済みの古いトラックをクリアしました');
+      }
+
       // fetchRecordingsを呼び出して新しいプレイリストを取得
+      // fetchRecordings内で再生順序が再計算される
       await fetchRecordings();
 
-      // 確実にインデックスを0にリセット
-      currentIndexRef.current = 0;
-      setCurrentIndex(0);
+      // 確実にインデックスと再生位置を0にリセット
+      playbackPositionRef.current = 0;
+      const firstIndex = playbackOrderRef.current.length > 0 ? playbackOrderRef.current[0] : 0;
+      currentIndexRef.current = firstIndex;
+      setCurrentIndex(firstIndex);
 
       // フラグをリセット
       hasCompletedPlaybackRef.current = false;
 
       // 新しいプレイリストで最初のトラックを再生
       if (recordingsRef.current.length > 0 && playTrackRef.current) {
-        console.log('新しいプレイリストで再生を再開:', recordingsRef.current.length, 'インデックス: 0');
+        console.log('新しいプレイリストで再生を再開:', recordingsRef.current.length, '再生位置: 0, インデックス:', firstIndex);
         // 少し待機してから再生（state更新が確実に反映されるように）
         await new Promise(resolve => setTimeout(resolve, 100));
-        await playTrackRef.current(0);
+        await playTrackRef.current(firstIndex);
       }
 
       isSwitching.current = false;
@@ -310,6 +367,42 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // まずインデックスを更新
     moveToNextTrack();
+
+    // moveToNextTrackでhasCompletedPlaybackRef.currentがtrueになった場合、
+    // 即座に新しいプレイリストをロードして再生を継続
+    if (hasCompletedPlaybackRef.current) {
+      console.log('プレイリスト一周完了フラグが立ちました。即座に新しいプレイリストをロードします');
+
+      // 古いプリロードをクリア
+      if (nextAudioRef.current) {
+        nextAudioRef.current.pause();
+        nextAudioRef.current.src = '';
+        nextAudioRef.current.onended = null;
+        nextAudioRef.current.onerror = null;
+      }
+
+      // fetchRecordingsを呼び出して新しいプレイリストを取得
+      await fetchRecordings();
+
+      // 確実にインデックスと再生位置を0にリセット
+      playbackPositionRef.current = 0;
+      const firstIndex = playbackOrderRef.current.length > 0 ? playbackOrderRef.current[0] : 0;
+      currentIndexRef.current = firstIndex;
+      setCurrentIndex(firstIndex);
+
+      // フラグをリセット
+      hasCompletedPlaybackRef.current = false;
+
+      // 新しいプレイリストで最初のトラックを再生
+      if (recordingsRef.current.length > 0 && playTrackRef.current) {
+        console.log('新しいプレイリストで再生を継続:', recordingsRef.current.length, '再生位置: 0, インデックス:', firstIndex);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await playTrackRef.current(firstIndex);
+      }
+
+      isSwitching.current = false;
+      return;
+    }
 
     // 次のトラックが既にプリロードされていれば、それを再生
     if (nextAudioRef.current && nextAudioRef.current.src) {
@@ -359,9 +452,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         console.error('再生エラー:', err);
       });
 
-      // さらに次をプリロード
-      const nextIdx = (currentIndexRef.current + 1) % recordingsRef.current.length;
-      await preloadNextTrack(nextIdx);
+      // さらに次をプリロード（再生順序配列を参照）
+      await preloadNextTrack();
     }
 
     isSwitching.current = false;
@@ -443,8 +535,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       switchToNextTrack();
     });
 
-    // 次のトラックをプリロード
-    preloadNextTrack(index);
+    // 次のトラックをプリロード（再生順序配列を参照）
+    preloadNextTrack();
   }, [setupAudioListeners, switchToNextTrack, preloadNextTrack, setAudioSinkId]);
 
   // playTrackの参照を常に最新に保つ
@@ -470,8 +562,13 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       console.log('プレイリストのスナップショットを準備:', recordings.length);
       playbackSnapshotRef.current = [...recordings];
       recordingsRef.current = [...recordings];
+
+      // 初期再生順序を計算
+      playbackOrderRef.current = buildPlaybackOrder(recordings);
+      playbackPositionRef.current = 0;
+      console.log('初期再生順序を設定:', playbackOrderRef.current);
     }
-  }, [recordings]);
+  }, [recordings, buildPlaybackOrder]);
 
   // 10秒ごとに録音リストを更新
   useEffect(() => {
@@ -512,6 +609,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     playbackSnapshotRef.current = null;
     hasCompletedPlaybackRef.current = false;
     hasStartedPlayback.current = false;
+    playbackOrderRef.current = [];
+    playbackPositionRef.current = 0;
     setCurrentIndex(0);
     setIsPlaying(false);
     setNeedsUserInteraction(true);
@@ -529,15 +628,21 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     if (!playbackSnapshotRef.current) {
       playbackSnapshotRef.current = [...recordings];
       recordingsRef.current = [...recordings];
+
+      // 再生順序を計算
+      playbackOrderRef.current = buildPlaybackOrder(recordings);
+      playbackPositionRef.current = 0;
+      console.log('再生開始時の再生順序を設定:', playbackOrderRef.current);
     }
 
     hasStartedPlayback.current = true;
     hasCompletedPlaybackRef.current = false;
     setNeedsUserInteraction(false);
 
-    // 最初のトラックを再生
-    playTrack(0);
-  }, [recordings, playTrack]);
+    // 最初のトラックを再生（再生順序配列の最初のインデックス）
+    const firstIndex = playbackOrderRef.current.length > 0 ? playbackOrderRef.current[0] : 0;
+    playTrack(firstIndex);
+  }, [recordings, playTrack, buildPlaybackOrder]);
 
   // クリーンアップ
   useEffect(() => {
