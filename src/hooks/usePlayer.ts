@@ -11,6 +11,10 @@ interface UsePlayerReturn {
   startPlayback: () => void;
   needsUserInteraction: boolean;
   resetPlayback: () => void;
+  selectAudioOutput: () => Promise<void>;
+  setOutputDevice: (deviceId: string) => Promise<void>;
+  currentAudioDevice: string | null;
+  audioOutputSupported: boolean;
 }
 
 interface UsePlayerOptions {
@@ -24,6 +28,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(true);
+  const [currentAudioDevice, setCurrentAudioDevice] = useState<string | null>(null);
+  const [audioOutputSupported, setAudioOutputSupported] = useState<boolean>(false);
 
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const nextAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -38,6 +44,135 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const playbackSnapshotRef = useRef<Recording[] | null>(null);
   // 再生が完了したかどうかのフラグ
   const hasCompletedPlaybackRef = useRef<boolean>(false);
+  // 選択された音声出力デバイスID
+  const selectedAudioDeviceIdRef = useRef<string>('');
+
+  // Audio Output Devices APIのサポートを確認
+  useEffect(() => {
+    const checkAudioOutputSupport = () => {
+      const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
+      const hasMediaDevices = 'mediaDevices' in navigator;
+      const hasSelectAudioOutput = hasMediaDevices && 'selectAudioOutput' in navigator.mediaDevices;
+
+      console.log('Audio Output Devices API サポート確認:');
+      console.log('  - setSinkId:', hasSetsinkId);
+      console.log('  - mediaDevices:', hasMediaDevices);
+      console.log('  - selectAudioOutput:', hasSelectAudioOutput);
+
+      const supported = hasSetsinkId && hasMediaDevices && hasSelectAudioOutput;
+      console.log('  - 総合サポート:', supported);
+
+      setAudioOutputSupported(supported);
+
+      // localStorageから保存されたデバイスIDを復元
+      if (supported) {
+        const savedDeviceId = localStorage.getItem('audioOutputDeviceId');
+        if (savedDeviceId) {
+          selectedAudioDeviceIdRef.current = savedDeviceId;
+          setCurrentAudioDevice(savedDeviceId);
+          console.log('  - 保存されたデバイスID:', savedDeviceId);
+        }
+      }
+    };
+    checkAudioOutputSupport();
+  }, []);
+
+  // Audio要素に音声出力デバイスを設定
+  const setAudioSinkId = useCallback(async (audio: HTMLAudioElement) => {
+    if (!audioOutputSupported || !selectedAudioDeviceIdRef.current) {
+      return;
+    }
+
+    try {
+      await audio.setSinkId(selectedAudioDeviceIdRef.current);
+      console.log(`音声出力デバイスを設定: ${selectedAudioDeviceIdRef.current}`);
+    } catch (err) {
+      console.error('音声出力デバイスの設定に失敗:', err);
+      // デバイスが利用できない場合はデフォルトにフォールバック
+      selectedAudioDeviceIdRef.current = '';
+      setCurrentAudioDevice(null);
+      localStorage.removeItem('audioOutputDeviceId');
+    }
+  }, [audioOutputSupported]);
+
+  // 音声出力デバイス一覧を取得
+  const getAudioOutputDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+      console.log('利用可能な音声出力デバイス:', audioOutputs);
+      return audioOutputs;
+    } catch (err) {
+      console.error('デバイス一覧の取得に失敗:', err);
+      return [];
+    }
+  }, []);
+
+  // 音声出力デバイスを選択
+  const selectAudioOutput = useCallback(async () => {
+    const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
+
+    if (!hasSetsinkId) {
+      console.warn('setSinkIdがこのブラウザでサポートされていません');
+      return;
+    }
+
+    try {
+      // selectAudioOutputが利用可能な場合はそれを使用
+      if ('selectAudioOutput' in navigator.mediaDevices) {
+        const device = await navigator.mediaDevices.selectAudioOutput();
+        selectedAudioDeviceIdRef.current = device.deviceId;
+        setCurrentAudioDevice(device.deviceId);
+        localStorage.setItem('audioOutputDeviceId', device.deviceId);
+
+        console.log(`選択されたデバイス: ${device.label} (${device.deviceId})`);
+
+        // 現在再生中のAudio要素に適用
+        if (currentAudioRef.current) {
+          await setAudioSinkId(currentAudioRef.current);
+        }
+        if (nextAudioRef.current) {
+          await setAudioSinkId(nextAudioRef.current);
+        }
+      } else {
+        // selectAudioOutputが使えない場合はenumerateDevicesを使用
+        // この場合、UIコンポーネント側でデバイス一覧を表示する必要がある
+        console.log('selectAudioOutputが利用できないため、enumerateDevicesを使用します');
+        const devices = await getAudioOutputDevices();
+
+        if (devices.length > 0) {
+          // カスタムイベントを発行してUIに通知
+          const event = new CustomEvent('audioOutputDeviceListAvailable', { detail: devices });
+          window.dispatchEvent(event);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError') {
+          console.log('ユーザーがデバイス選択をキャンセルしました');
+        } else {
+          console.error('音声出力デバイスの選択に失敗:', err);
+        }
+      }
+    }
+  }, [setAudioSinkId, getAudioOutputDevices]);
+
+  // デバイスIDを直接設定する関数（UI側から呼び出される）
+  const setOutputDevice = useCallback(async (deviceId: string) => {
+    selectedAudioDeviceIdRef.current = deviceId;
+    setCurrentAudioDevice(deviceId);
+    localStorage.setItem('audioOutputDeviceId', deviceId);
+
+    console.log(`デバイスを設定: ${deviceId}`);
+
+    // 現在再生中のAudio要素に適用
+    if (currentAudioRef.current) {
+      await setAudioSinkId(currentAudioRef.current);
+    }
+    if (nextAudioRef.current) {
+      await setAudioSinkId(nextAudioRef.current);
+    }
+  }, [setAudioSinkId]);
 
   // 参照を常に最新に保つ
   useEffect(() => {
@@ -212,12 +347,17 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         console.error('次のトラックのプリロードエラー:', e);
         // プリロードエラーの場合はスキップして次のトラックを試す
       };
+
+      // 音声出力デバイスを設定
+      setAudioSinkId(nextAudioRef.current).catch(err => {
+        console.error('プリロード用Audio要素のデバイス設定エラー:', err);
+      });
     }
 
     const url = getRecordingUrl(nextRecording.file_path);
     nextAudioRef.current.src = url;
     nextAudioRef.current.load();
-  }, []);
+  }, [setAudioSinkId]);
 
   // 次のトラックに切り替えて再生
   const switchToNextTrack = useCallback(() => {
@@ -327,7 +467,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   }, [switchToNextTrack]);
 
   // 指定されたインデックスのトラックを再生
-  const playTrack = useCallback((index: number) => {
+  const playTrack = useCallback(async (index: number) => {
     if (recordingsRef.current.length === 0) return;
 
     const recording = recordingsRef.current[index];
@@ -341,6 +481,10 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // 現在のAudio要素を作成/設定
     if (!currentAudioRef.current) {
       currentAudioRef.current = new Audio();
+      // 音声出力デバイスを設定
+      await setAudioSinkId(currentAudioRef.current).catch(err => {
+        console.error('Audio要素のデバイス設定エラー:', err);
+      });
     }
 
     // イベントリスナーを設定
@@ -358,7 +502,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 次のトラックをプリロード
     preloadNextTrack(index);
-  }, [setupAudioListeners, switchToNextTrack, preloadNextTrack]);
+  }, [setupAudioListeners, switchToNextTrack, preloadNextTrack, setAudioSinkId]);
 
   // 初回ロード時に録音を取得し、自動的にスナップショットを作成
   useEffect(() => {
@@ -463,5 +607,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     startPlayback,
     needsUserInteraction,
     resetPlayback,
+    selectAudioOutput,
+    setOutputDevice,
+    currentAudioDevice,
+    audioOutputSupported,
   };
 };

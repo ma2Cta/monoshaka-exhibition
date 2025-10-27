@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Mic, CalendarDays, Clock } from 'lucide-react';
+import { Play, Pause, Mic, CalendarDays, Clock, Speaker } from 'lucide-react';
 
 // 録音情報コンポーネント（プレースホルダー付き）
 const RecordingInfo = ({ recording }: { recording: Recording | null }) => {
@@ -58,6 +58,8 @@ export default function LoopPlayer() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | undefined>(undefined);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [showDeviceList, setShowDeviceList] = useState(false);
 
   const {
     recordings,
@@ -67,7 +69,10 @@ export default function LoopPlayer() {
     totalCount,
     startPlayback,
     needsUserInteraction,
-    resetPlayback
+    resetPlayback,
+    selectAudioOutput,
+    setOutputDevice,
+    audioOutputSupported
   } = usePlayer({ playlistId: selectedPlaylistId });
 
   // プレイリスト一覧を取得し、有効なプレイリストを初期選択
@@ -103,6 +108,29 @@ export default function LoopPlayer() {
     setSelectedPlaylistId(playlistId);
   }
 
+  // カスタムイベントでデバイス一覧を受け取る
+  useEffect(() => {
+    const handleDeviceList = (event: Event) => {
+      const customEvent = event as CustomEvent<MediaDeviceInfo[]>;
+      setAudioDevices(customEvent.detail);
+      setShowDeviceList(true);
+    };
+
+    window.addEventListener('audioOutputDeviceListAvailable', handleDeviceList);
+    return () => {
+      window.removeEventListener('audioOutputDeviceListAvailable', handleDeviceList);
+    };
+  }, []);
+
+  async function handleSelectAudioOutput() {
+    await selectAudioOutput();
+  }
+
+  async function handleDeviceSelect(deviceId: string) {
+    await setOutputDevice(deviceId);
+    setShowDeviceList(false);
+  }
+
   // 波形アニメーションの高さを固定（初回のみ生成）
   const waveHeights = useMemo(() => {
     return Array.from({ length: 20 }, () => Math.random() * 80 + 20);
@@ -117,25 +145,76 @@ export default function LoopPlayer() {
       <div className="w-full max-w-4xl">
         {/* プレイリスト選択UI */}
         {!isLoadingPlaylists && playlists.length > 0 && (
-          <div className="mb-6 flex items-center justify-center gap-4">
-            <label htmlFor="playlist-select" className="text-foreground text-lg font-semibold">
-              プレイリスト:
-            </label>
-            <Select
-              value={selectedPlaylistId || ''}
-              onValueChange={handlePlaylistChange}
-            >
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="プレイリストを選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {playlists.map((playlist) => (
-                  <SelectItem key={playlist.id} value={playlist.id}>
-                    {playlist.name} {playlist.is_active && '(有効)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="mb-6 space-y-4">
+            <div className="flex items-center justify-center gap-4">
+              <label htmlFor="playlist-select" className="text-foreground text-lg font-semibold">
+                プレイリスト:
+              </label>
+              <Select
+                value={selectedPlaylistId || ''}
+                onValueChange={handlePlaylistChange}
+              >
+                <SelectTrigger className="w-[280px]">
+                  <SelectValue placeholder="プレイリストを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {playlists.map((playlist) => (
+                    <SelectItem key={playlist.id} value={playlist.id}>
+                      {playlist.name} {playlist.is_active && '(有効)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 音声出力デバイス選択ボタン */}
+            <div className="flex items-center justify-center">
+              <Button
+                onClick={handleSelectAudioOutput}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={!audioOutputSupported}
+                title={audioOutputSupported ? '音声出力デバイスを選択' : 'このブラウザではサポートされていません'}
+              >
+                <Speaker className="h-4 w-4" />
+                音声出力デバイスを選択
+                {!audioOutputSupported && ' (未サポート)'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* デバイス選択ダイアログ */}
+        {showDeviceList && audioDevices.length > 0 && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50">
+            <Card className="w-full max-w-md mx-4">
+              <CardContent className="pt-6">
+                <h3 className="text-lg font-semibold mb-4">音声出力デバイスを選択</h3>
+                <div className="space-y-2">
+                  {audioDevices.map((device) => (
+                    <Button
+                      key={device.deviceId}
+                      onClick={() => handleDeviceSelect(device.deviceId)}
+                      variant="outline"
+                      className="w-full justify-start"
+                    >
+                      <Speaker className="mr-2 h-4 w-4" />
+                      {device.label || `デバイス ${device.deviceId.substring(0, 8)}...`}
+                    </Button>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    onClick={() => setShowDeviceList(false)}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    キャンセル
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
