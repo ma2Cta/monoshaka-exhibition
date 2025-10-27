@@ -206,113 +206,27 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // プレイリストIDが指定されている場合はプレイリストの録音を取得
       const data = await getPlaylistRecordings(playlistId);
 
-      const oldRecordings = recordingsRef.current;
-
       // 再生中の場合はスナップショットを保持し続ける
+      // 追加も削除も一切反映せず、プレイリストが一周するまで固定する
       if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
-        // 再生中のスナップショット内の録音が削除されていないかチェック
-        const currentRecording = playbackSnapshotRef.current[currentIndexRef.current];
-        const newIds = new Set(data.map(r => r.id));
-        const wasCurrentDeleted = currentRecording && !newIds.has(currentRecording.id);
-
-        // 現在再生中の録音が削除された場合のみ処理
-        if (wasCurrentDeleted) {
-          console.log('現在再生中の録音が削除されました。次の録音にスキップします。');
-
-          // スナップショットから削除された録音を除外
-          const updatedSnapshot = playbackSnapshotRef.current.filter(r => newIds.has(r.id));
-
-          if (updatedSnapshot.length === 0) {
-            // すべて削除された場合は再生終了
-            console.log('すべての録音が削除されました。');
-            playbackSnapshotRef.current = null;
-            hasCompletedPlaybackRef.current = true;
-            setRecordings(data);
-            setCurrentIndex(0);
-            setIsPlaying(false);
-
-            if (currentAudioRef.current) {
-              currentAudioRef.current.pause();
-              currentAudioRef.current.src = '';
-            }
-            if (nextAudioRef.current) {
-              nextAudioRef.current.pause();
-              nextAudioRef.current.src = '';
-            }
-          } else {
-            // スナップショットを更新し、インデックスを調整
-            playbackSnapshotRef.current = updatedSnapshot;
-            const newIndex = currentIndexRef.current >= updatedSnapshot.length ? 0 : currentIndexRef.current;
-            setCurrentIndex(newIndex);
-
-            // 現在の再生を停止
-            if (currentAudioRef.current) {
-              currentAudioRef.current.pause();
-              currentAudioRef.current.src = '';
-            }
-            if (nextAudioRef.current) {
-              nextAudioRef.current.pause();
-              nextAudioRef.current.src = '';
-            }
-          }
-        }
-
-        // 表示用のrecordingsは更新しない（スナップショットを表示）
+        // 再生中は何も更新しない
+        // スナップショットをそのまま保持
+        console.log('再生中のため、プレイリストの変更を無視します');
         setError(null);
         return;
       }
 
       // プレイリストが完了した後、新しいプレイリストを取得
       if (hasCompletedPlaybackRef.current) {
-        console.log('新しいプレイリストを取得しました:', data.length);
+        console.log('プレイリストが一周しました。新しいプレイリストを取得:', data.length);
         playbackSnapshotRef.current = [...data];
         hasCompletedPlaybackRef.current = false;
         setCurrentIndex(0);
       }
 
       // 再生していない場合は通常通り更新
-      const newIds = new Set(data.map(r => r.id));
-
-      // 現在再生中の録音が削除されたかチェック
-      const currentRecording = oldRecordings[currentIndexRef.current];
-      const wasCurrentDeleted = currentRecording && !newIds.has(currentRecording.id);
-
       setRecordings(data);
       setError(null);
-
-      // 現在再生中の録音が削除された場合
-      if (wasCurrentDeleted && data.length > 0) {
-        console.log('現在再生中の録音が削除されました。次の録音にスキップします。');
-
-        // 現在のインデックスを調整
-        // 削除された場合は同じインデックス位置の録音を再生（または最後まで行っていたら0に戻る）
-        const newIndex = currentIndexRef.current >= data.length ? 0 : currentIndexRef.current;
-        setCurrentIndex(newIndex);
-
-        // 現在の再生を停止して次の録音を再生
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause();
-          currentAudioRef.current.src = '';
-        }
-        if (nextAudioRef.current) {
-          nextAudioRef.current.pause();
-          nextAudioRef.current.src = '';
-        }
-      } else if (data.length === 0) {
-        // すべての録音が削除された場合
-        console.log('すべての録音が削除されました。');
-        setCurrentIndex(0);
-        setIsPlaying(false);
-
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause();
-          currentAudioRef.current.src = '';
-        }
-        if (nextAudioRef.current) {
-          nextAudioRef.current.pause();
-          nextAudioRef.current.src = '';
-        }
-      }
     } catch (err) {
       console.error('録音取得エラー:', err);
       setError(err instanceof Error ? err.message : '録音の取得に失敗しました');
