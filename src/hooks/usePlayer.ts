@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getRecordings, getRecordingUrl, getPlaylistRecordings } from '@/lib/supabase';
+import { getRecordingUrl, getPlaylistRecordings } from '@/lib/supabase';
 import { Recording } from '@/lib/types';
 
 interface UsePlayerReturn {
@@ -10,10 +10,11 @@ interface UsePlayerReturn {
   totalCount: number;
   startPlayback: () => void;
   needsUserInteraction: boolean;
+  resetPlayback: () => void;
 }
 
 interface UsePlayerOptions {
-  playlistId?: string | null;
+  playlistId?: string | null | undefined;
 }
 
 export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
@@ -56,11 +57,13 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   // 録音リストを取得
   const fetchRecordings = useCallback(async () => {
     try {
+      // プレイリストIDが指定されていない場合は何もしない
+      if (!playlistId) {
+        return;
+      }
+
       // プレイリストIDが指定されている場合はプレイリストの録音を取得
-      // 指定されていない場合は全録音を取得
-      const data = playlistId
-        ? await getPlaylistRecordings(playlistId)
-        : await getRecordings();
+      const data = await getPlaylistRecordings(playlistId);
 
       const oldRecordings = recordingsRef.current;
 
@@ -384,6 +387,38 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     };
   }, [fetchRecordings]);
 
+  // 再生をリセット
+  const resetPlayback = useCallback(() => {
+    console.log('再生をリセットします');
+
+    // オーディオを停止
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.src = '';
+      currentAudioRef.current.onended = null;
+      currentAudioRef.current.onerror = null;
+      currentAudioRef.current.onplaying = null;
+      currentAudioRef.current.onpause = null;
+    }
+    if (nextAudioRef.current) {
+      nextAudioRef.current.pause();
+      nextAudioRef.current.src = '';
+      nextAudioRef.current.onended = null;
+      nextAudioRef.current.onerror = null;
+      nextAudioRef.current.onplaying = null;
+      nextAudioRef.current.onpause = null;
+    }
+
+    // 状態をリセット
+    playbackSnapshotRef.current = null;
+    hasCompletedPlaybackRef.current = false;
+    hasStartedPlayback.current = false;
+    setCurrentIndex(0);
+    setIsPlaying(false);
+    setNeedsUserInteraction(true);
+    setRecordings([]);
+  }, []);
+
   // ユーザーインタラクション後に再生を開始
   const startPlayback = useCallback(() => {
     if (recordings.length === 0) return;
@@ -427,5 +462,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     totalCount: recordings.length,
     startPlayback,
     needsUserInteraction,
+    resetPlayback,
   };
 };

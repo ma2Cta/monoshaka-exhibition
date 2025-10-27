@@ -56,7 +56,7 @@ const RecordingInfo = ({ recording }: { recording: Recording | null }) => {
 
 export default function LoopPlayer() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | undefined>(undefined);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
 
   const {
@@ -66,7 +66,8 @@ export default function LoopPlayer() {
     error,
     totalCount,
     startPlayback,
-    needsUserInteraction
+    needsUserInteraction,
+    resetPlayback
   } = usePlayer({ playlistId: selectedPlaylistId });
 
   // プレイリスト一覧を取得し、有効なプレイリストを初期選択
@@ -97,6 +98,8 @@ export default function LoopPlayer() {
   }
 
   function handlePlaylistChange(playlistId: string) {
+    // プレイリストが変更されたら再生をリセット
+    resetPlayback();
     setSelectedPlaylistId(playlistId);
   }
 

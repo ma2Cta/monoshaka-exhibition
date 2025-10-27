@@ -15,9 +15,15 @@ function getSupabaseClient(): SupabaseClient<Database> {
  * @param blob 録音のBlobデータ
  * @param duration 録音の長さ（秒）
  * @param transcription 文字起こしテキスト（オプショナル）
+ * @param playlistId プレイリストID（指定した場合、そのプレイリスト専用のパスに保存）
  * @returns アップロードされた録音のレコード
  */
-export async function uploadRecording(blob: Blob, duration: number, transcription?: string) {
+export async function uploadRecording(
+  blob: Blob,
+  duration: number,
+  transcription?: string,
+  playlistId?: string
+) {
   const supabase = getSupabaseClient();
 
   // ファイル名を生成（タイムスタンプ + ランダム文字列）
@@ -25,10 +31,13 @@ export async function uploadRecording(blob: Blob, duration: number, transcriptio
   const random = Math.random().toString(36).substring(2, 10);
   const fileName = `${timestamp}-${random}.webm`;
 
+  // ファイルパスを決定（プレイリストIDがある場合はそのディレクトリ内に保存）
+  const filePath = playlistId ? `playlist-${playlistId}/${fileName}` : fileName;
+
   // 1. Storageにファイルをアップロード
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('recordings')
-    .upload(fileName, blob, {
+    .upload(filePath, blob, {
       contentType: 'audio/webm',
       cacheControl: '3600',
       upsert: false,
@@ -231,10 +240,31 @@ export async function createPlaylist(name: string): Promise<Playlist> {
 
 /**
  * プレイリストを削除する
+ * プレイリスト内のファイルも削除する
  * @param id プレイリストID
  */
 export async function deletePlaylist(id: string): Promise<void> {
   const supabase = getSupabaseClient();
+
+  // プレイリストディレクトリ内のファイルをリスト
+  const folderPath = `playlist-${id}`;
+  const { data: files, error: listError } = await supabase.storage
+    .from('recordings')
+    .list(folderPath);
+
+  // ファイルが存在する場合、すべて削除
+  if (!listError && files && files.length > 0) {
+    const filePaths = files.map(file => `${folderPath}/${file.name}`);
+    const { error: removeError } = await supabase.storage
+      .from('recordings')
+      .remove(filePaths);
+
+    if (removeError) {
+      console.error('ファイル削除エラー:', removeError);
+    }
+  }
+
+  // プレイリストを削除
   const { error } = await supabase.from('playlists').delete().eq('id', id);
 
   if (error) {

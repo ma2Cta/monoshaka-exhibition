@@ -4,7 +4,7 @@ import Header from '@/components/layout/Header';
 export default function PlayPage() {
   return (
     <>
-      <Header title="再生" />
+      <Header />
       <LoopPlayer />
     </>
   );
