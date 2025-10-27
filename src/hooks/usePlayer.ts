@@ -185,16 +185,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
-  useEffect(() => {
-    // スナップショットが存在する場合はスナップショットを使用
-    // 存在しない場合は通常のrecordingsを使用
-    if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
-      recordingsRef.current = playbackSnapshotRef.current;
-    } else {
-      recordingsRef.current = recordings;
-    }
-  }, [recordings]);
-
   // 録音リストを取得
   const fetchRecordings = useCallback(async () => {
     try {
@@ -210,7 +200,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // 追加も削除も一切反映せず、プレイリストが一周するまで固定する
       if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
         // 再生中は何も更新しない
-        // スナップショットをそのまま保持
+        // recordingsRefもスナップショットを保持し続ける
         console.log('再生中のため、プレイリストの変更を無視します');
         setError(null);
         return;
@@ -220,6 +210,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       if (hasCompletedPlaybackRef.current) {
         console.log('プレイリストが一周しました。新しいプレイリストを取得:', data.length);
         playbackSnapshotRef.current = [...data];
+        recordingsRef.current = [...data];
         hasCompletedPlaybackRef.current = false;
         setCurrentIndex(0);
       }
