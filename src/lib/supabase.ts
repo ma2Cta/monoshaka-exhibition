@@ -29,7 +29,10 @@ export async function uploadRecording(
   // ファイル名を生成（タイムスタンプ + ランダム文字列）
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 10);
-  const fileName = `${timestamp}-${random}.webm`;
+
+  // Blobのタイプから拡張子を決定（MP4優先、WebMフォールバック対応）
+  const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
+  const fileName = `${timestamp}-${random}.${extension}`;
 
   // ファイルパスを決定（プレイリストIDがある場合はそのディレクトリ内に保存）
   const filePath = playlistId ? `playlist-${playlistId}/${fileName}` : fileName;
@@ -38,7 +41,7 @@ export async function uploadRecording(
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('recordings')
     .upload(filePath, blob, {
-      contentType: 'audio/webm',
+      contentType: blob.type, // Blobのタイプを使用
       cacheControl: '3600',
       upsert: false,
     });

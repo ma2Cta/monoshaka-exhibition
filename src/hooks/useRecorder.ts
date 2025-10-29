@@ -47,16 +47,21 @@ export const useRecorder = (): UseRecorderReturn => {
       // マイクへのアクセスを要求
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
           sampleRate: 48000,
         }
       });
       streamRef.current = stream;
 
-      // MediaRecorderの設定
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
+      // MediaRecorderの設定（MP4優先、フォールバックあり）
+      let mimeType = 'audio/mp4';
+      if (!MediaRecorder.isTypeSupported('audio/mp4')) {
+        // MP4非対応の場合はWebMにフォールバック（Firefoxなど）
+        mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+      }
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType,
