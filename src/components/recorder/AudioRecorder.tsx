@@ -23,19 +23,13 @@ export default function AudioRecorder() {
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success'>('idle');
 
   // 音声フィードバック用の関数
-  const playBeep = useCallback(async (frequency: number, duration: number, volume: number = 0.3) => {
+  const playBeep = useCallback((frequency: number, duration: number, volume: number = 0.3) => {
     try {
       // webkitAudioContextの型定義
       interface WindowWithWebkit extends Window {
         webkitAudioContext?: typeof AudioContext;
       }
       const audioContext = new (window.AudioContext || (window as WindowWithWebkit).webkitAudioContext!)();
-
-      // iOS対応: AudioContextがsuspended状態の場合はresume
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -152,13 +146,13 @@ export default function AudioRecorder() {
     }
   }, [recordedBlob, duration, transcription, handleNewRecording, playSuccessSound]);
 
-  const handleStartRecording = useCallback(async () => {
+  const handleStartRecording = useCallback(() => {
     // 録音停止状態から再度録音開始する場合はリセット
     if (state === 'stopped') {
       reset();
     }
-    // 録音開始音を再生（iOS対応のためawait）
-    await playStartSound();
+    // 録音開始音を再生
+    playStartSound();
     // 効果音が録音に入らないよう、200ms遅延させてから録音開始
     setTimeout(() => {
       startRecording();
@@ -167,7 +161,7 @@ export default function AudioRecorder() {
 
   // キーボードショートカットのハンドラー
   useEffect(() => {
-    const handleKeyPress = async (e: KeyboardEvent) => {
+    const handleKeyPress = (e: KeyboardEvent) => {
       // モーダル表示中やアップロード中は無効
       if (uploadState !== 'idle') return;
 
@@ -179,10 +173,10 @@ export default function AudioRecorder() {
         case 's': // Sキー: 録音開始/停止/再録音
           e.preventDefault();
           if (state === 'recording') {
-            await playStopSound();
+            playStopSound();
             stopRecording();
           } else if (state === 'idle' || state === 'stopped') {
-            await handleStartRecording();
+            handleStartRecording();
           }
           break;
         case 'enter': // Enterキー: アップロード
@@ -313,8 +307,8 @@ export default function AudioRecorder() {
 
             {state === 'recording' && (
               <Button
-                onClick={async () => {
-                  await playStopSound();
+                onClick={() => {
+                  playStopSound();
                   stopRecording();
                 }}
                 variant="destructive"
