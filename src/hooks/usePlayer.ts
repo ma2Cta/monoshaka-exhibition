@@ -524,6 +524,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // 現在のAudio要素を作成/設定
     if (!currentAudioRef.current) {
       currentAudioRef.current = new Audio();
+      // iOS対応: preloadを設定
+      currentAudioRef.current.preload = 'auto';
       // 音声出力デバイスを設定
       await setAudioSinkId(currentAudioRef.current).catch(err => {
         console.error('Audio要素のデバイス設定エラー:', err);
@@ -533,15 +535,37 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // イベントリスナーを設定
     setupAudioListeners(currentAudioRef.current);
 
-    // トラックをセット
+    // トラックをセット（load()を呼ばず、ブラウザの自動ロードに任せる）
     currentAudioRef.current.src = url;
-    currentAudioRef.current.load();
 
-    // 再生
-    currentAudioRef.current.play().catch((err) => {
-      console.error('再生エラー:', err);
-      switchToNextTrack();
-    });
+    // iOS Safari対応: canplayイベントを待ってから再生
+    const playWhenReady = () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.play().catch((err) => {
+          console.error('再生エラー:', err);
+          switchToNextTrack();
+        });
+      }
+    };
+
+    // canplayイベントリスナーを一時的に設定
+    const handleCanPlay = () => {
+      playWhenReady();
+      // イベントリスナーを削除（1回だけ実行）
+      if (currentAudioRef.current) {
+        currentAudioRef.current.removeEventListener('canplay', handleCanPlay);
+      }
+    };
+
+    currentAudioRef.current.addEventListener('canplay', handleCanPlay, { once: true });
+
+    // タイムアウト保護: 2秒待ってもcanplayが来なければ強制再生
+    setTimeout(() => {
+      if (currentAudioRef.current && currentAudioRef.current.paused) {
+        console.warn('canplayタイムアウト、強制再生を試みます');
+        playWhenReady();
+      }
+    }, 2000);
 
     // 次のトラックをプリロード（再生順序配列を参照）
     preloadNextTrack();
