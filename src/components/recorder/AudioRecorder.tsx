@@ -1,7 +1,7 @@
 'use client';
 
 import { useRecorder } from '@/hooks/useRecorder';
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { uploadRecording, getActivePlaylist, addRecordingToPlaylist } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Loader2, Mic, Square, Send, CheckCircle2, Keyboard } from 'lucide-react';
@@ -13,7 +13,6 @@ export default function AudioRecorder() {
     recordedBlob,
     recordedUrl,
     duration,
-    transcription,
     availableDevices,
     selectedDeviceId,
     startRecording,
@@ -22,76 +21,7 @@ export default function AudioRecorder() {
     setSelectedDevice,
   } = useRecorder();
 
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success'>('idle');
-
-  // 音声フィードバック用の関数
-  const playBeep = useCallback((frequency: number, duration: number, volume: number = 0.3) => {
-    try {
-      // webkitAudioContextの型定義
-      interface WindowWithWebkit extends Window {
-        webkitAudioContext?: typeof AudioContext;
-      }
-      const audioContext = new (window.AudioContext || (window as WindowWithWebkit).webkitAudioContext!)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.frequency.value = frequency;
-      oscillator.type = 'sine';
-
-      gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + duration);
-
-      // クリーンアップ
-      setTimeout(() => {
-        audioContext.close();
-      }, duration * 1000 + 100);
-    } catch (error) {
-      console.error('ビープ音の再生エラー:', error);
-    }
-  }, []);
-
-  // 録音開始音（シンプルな「ピッ」）
-  const playStartSound = useCallback(() => {
-    playBeep(880, 0.15); // A5音、150ms
-  }, [playBeep]);
-
-  // 録音停止音（2回の「ピピッ」）
-  const playStopSound = useCallback(() => {
-    playBeep(880, 0.1); // 1回目
-    setTimeout(() => {
-      playBeep(880, 0.1); // 2回目
-    }, 150);
-  }, [playBeep]);
-
-  // アップロード成功効果音（3音階で上昇するメロディ）
-  const playSuccessSound = useCallback(() => {
-    // ド→ミ→ソの和音的な成功音
-    playBeep(523.25, 0.15, 0.3); // ド (C5)
-    setTimeout(() => {
-      playBeep(659.25, 0.15, 0.3); // ミ (E5)
-    }, 100);
-    setTimeout(() => {
-      playBeep(783.99, 0.3, 0.3); // ソ (G5) - 最後の音は少し長め
-    }, 200);
-  }, [playBeep]);
-
-  // 録音URLが変更されたら、オーディオ要素に設定して自動再生
-  useEffect(() => {
-    if (audioRef.current && recordedUrl) {
-      audioRef.current.src = recordedUrl;
-      // 自動再生
-      audioRef.current.play().catch((error) => {
-        console.error('自動再生エラー:', error);
-      });
-    }
-  }, [recordedUrl]);
 
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -117,7 +47,7 @@ export default function AudioRecorder() {
       const recording: Recording = await uploadRecording(
         recordedBlob,
         duration,
-        transcription || undefined,
+        undefined,
         activePlaylist?.id
       );
 
@@ -125,64 +55,49 @@ export default function AudioRecorder() {
       if (activePlaylist && recording) {
         try {
           await addRecordingToPlaylist(activePlaylist.id, recording.id);
-        } catch (playlistErr) {
+        } catch {
           // プレイリストへの追加が失敗しても、録音自体は成功しているので続行
-          console.warn('プレイリストへの追加に失敗しましたが、録音は保存されました:', playlistErr);
         }
       }
 
       setUploadState('success');
 
-      // 成功効果音を再生
-      playSuccessSound();
-
       // 2秒後に自動的にリセット
       setTimeout(() => {
         handleNewRecording();
       }, 2000);
-    } catch (err) {
-      console.error('アップロードエラー:', err);
+    } catch {
       // エラーが発生してもリセットして次の録音を受け付ける
       setTimeout(() => {
         handleNewRecording();
       }, 2000);
     }
-  }, [recordedBlob, duration, transcription, handleNewRecording, playSuccessSound]);
+  }, [recordedBlob, duration, handleNewRecording]);
 
   const handleStartRecording = useCallback(() => {
-    // 録音停止状態から再度録音開始する場合はリセット
     if (state === 'stopped') {
       reset();
     }
-    // 録音開始音を再生
-    playStartSound();
-    // 効果音が録音に入らないよう、200ms遅延させてから録音開始
-    setTimeout(() => {
-      startRecording();
-    }, 200);
-  }, [state, reset, startRecording, playStartSound]);
+    startRecording();
+  }, [state, reset, startRecording]);
 
-  // キーボードショートカットのハンドラー
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // モーダル表示中やアップロード中は無効
       if (uploadState !== 'idle') return;
 
-      // inputやtextareaにフォーカスがある場合は無効
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
       switch (e.key.toLowerCase()) {
-        case 's': // Sキー: 録音開始/停止/再録音
+        case 's':
           e.preventDefault();
           if (state === 'recording') {
-            playStopSound();
             stopRecording();
           } else if (state === 'idle' || state === 'stopped') {
             handleStartRecording();
           }
           break;
-        case 'enter': // Enterキー: アップロード
+        case 'enter':
           if (state === 'stopped' && recordedBlob) {
             e.preventDefault();
             handleUpload();
@@ -195,11 +110,10 @@ export default function AudioRecorder() {
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [state, uploadState, recordedBlob, stopRecording, handleStartRecording, handleUpload, playStopSound]);
+  }, [state, uploadState, recordedBlob, stopRecording, handleStartRecording, handleUpload]);
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
-      {/* アップロード成功モーダル */}
       {uploadState === 'success' && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-sm w-full mx-4 animate-in zoom-in duration-200">
@@ -218,7 +132,6 @@ export default function AudioRecorder() {
         </div>
       )}
 
-      {/* アップロード中モーダル */}
       {uploadState === 'uploading' && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-sm w-full mx-4">
@@ -232,10 +145,8 @@ export default function AudioRecorder() {
         </div>
       )}
 
-      {/* メインコンテンツ */}
       <div className="w-full max-w-2xl">
         <div className="text-center space-y-8">
-          {/* 録音中の表示 */}
           {state === 'recording' && (
             <div className="space-y-6">
               <div className="relative">
@@ -255,7 +166,6 @@ export default function AudioRecorder() {
             </div>
           )}
 
-          {/* 初期状態 */}
           {state === 'idle' && uploadState === 'idle' && (
             <div className="space-y-6">
               <div className="w-24 h-24 mx-auto rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
@@ -266,7 +176,6 @@ export default function AudioRecorder() {
                   録音を開始
                 </h2>
 
-                {/* マイク選択 */}
                 {availableDevices.length > 0 && (
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -293,7 +202,6 @@ export default function AudioRecorder() {
             </div>
           )}
 
-          {/* 録音完了時のプレビュー */}
           {state === 'stopped' && recordedUrl && uploadState === 'idle' && (
             <div className="space-y-6">
               <div className="w-24 h-24 mx-auto rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
@@ -303,20 +211,16 @@ export default function AudioRecorder() {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                   録音が完了しました
                 </h3>
-                <audio
-                  ref={audioRef}
-                  controls
-                  loop
-                  className="w-full"
-                />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                  内容を確認してアップロードしてください
+                <p className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100 text-center my-6">
+                  {formatDuration(duration)}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 text-center">
+                  Enterキーを押してアップロードしてください
                 </p>
               </div>
             </div>
           )}
 
-          {/* ボタンエリア */}
           <div className="flex justify-center gap-4">
             {(state === 'idle' || state === 'stopped') && uploadState === 'idle' && (
               <Button
@@ -332,7 +236,6 @@ export default function AudioRecorder() {
             {state === 'recording' && (
               <Button
                 onClick={() => {
-                  playStopSound();
                   stopRecording();
                 }}
                 variant="destructive"
@@ -356,7 +259,6 @@ export default function AudioRecorder() {
             )}
           </div>
 
-          {/* キーボードショートカットの説明 */}
           {uploadState === 'idle' && (
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-center gap-2 mb-4">
