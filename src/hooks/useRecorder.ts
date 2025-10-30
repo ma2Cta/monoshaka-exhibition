@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useSpeechRecognition } from './useSpeechRecognition';
 
 export type RecorderState = 'idle' | 'recording' | 'paused' | 'stopped';
 
@@ -13,9 +12,6 @@ interface UseRecorderReturn {
   recordedBlob: Blob | null;
   recordedUrl: string | null;
   duration: number;
-  transcription: string;
-  isTranscribing: boolean;
-  isSpeechSupported: boolean;
   error: string | null;
   availableDevices: AudioDevice[];
   selectedDeviceId: string | null;
@@ -36,16 +32,6 @@ export const useRecorder = (): UseRecorderReturn => {
   const [error, setError] = useState<string | null>(null);
   const [availableDevices, setAvailableDevices] = useState<AudioDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-
-  // 音声認識フックを使用
-  const {
-    transcript,
-    isListening,
-    isSupported,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useSpeechRecognition();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -87,8 +73,7 @@ export const useRecorder = (): UseRecorderReturn => {
       } else if (savedDeviceExists) {
         setSelectedDeviceId(savedDeviceId);
       }
-    } catch (err) {
-      console.error('デバイスリスト取得エラー:', err);
+    } catch {
       setError('マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');
     }
   }, []); // 依存配列を空にして無限ループを防ぐ
@@ -125,10 +110,17 @@ export const useRecorder = (): UseRecorderReturn => {
       });
       streamRef.current = stream;
 
-      // MediaRecorderの設定
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
+      // MediaRecorderの設定 - WebM形式を使用
+      let mimeType: string;
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else {
+        mimeType = 'audio/mp4;codecs=mp4a.40.2';
+      }
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType,
@@ -150,7 +142,6 @@ export const useRecorder = (): UseRecorderReturn => {
         const blob = new Blob(chunksRef.current, { type: mimeType });
         setRecordedBlob(blob);
 
-        // URLを生成
         const url = URL.createObjectURL(blob);
         setRecordedUrl(url);
 
@@ -168,12 +159,9 @@ export const useRecorder = (): UseRecorderReturn => {
       };
 
       // 録音開始
-      mediaRecorder.start(100); // 100msごとにdataavailableイベントを発火
+      mediaRecorder.start(1000);
       setState('recording');
       startTimeRef.current = Date.now();
-
-      // 音声認識を開始
-      startListening();
 
       // 録音時間のタイマー
       timerRef.current = setInterval(() => {
@@ -187,7 +175,6 @@ export const useRecorder = (): UseRecorderReturn => {
       }, 100);
 
     } catch (err) {
-      console.error('録音開始エラー:', err);
       setError(
         err instanceof Error
           ? err.message
@@ -195,28 +182,23 @@ export const useRecorder = (): UseRecorderReturn => {
       );
       setState('idle');
     }
-  }, [startListening, selectedDeviceId]);
+  }, [selectedDeviceId]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-    // 音声認識を停止
-    stopListening();
-  }, [stopListening]);
+  }, []);
 
   const reset = useCallback(() => {
-    // URLをクリーンアップ
     if (recordedUrl) {
       URL.revokeObjectURL(recordedUrl);
     }
 
-    // タイマーをクリア
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
 
-    // ストリームを停止
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
@@ -227,19 +209,13 @@ export const useRecorder = (): UseRecorderReturn => {
     setDuration(0);
     setError(null);
     chunksRef.current = [];
-
-    // 文字起こしをリセット
-    resetTranscript();
-  }, [recordedUrl, resetTranscript]);
+  }, [recordedUrl]);
 
   return {
     state,
     recordedBlob,
     recordedUrl,
     duration,
-    transcription: transcript,
-    isTranscribing: isListening,
-    isSpeechSupported: isSupported,
     error,
     availableDevices,
     selectedDeviceId,
