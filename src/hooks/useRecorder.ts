@@ -1,7 +1,12 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSpeechRecognition } from './useSpeechRecognition';
 
 export type RecorderState = 'idle' | 'recording' | 'paused' | 'stopped';
+
+export interface AudioDevice {
+  deviceId: string;
+  label: string;
+}
 
 interface UseRecorderReturn {
   state: RecorderState;
@@ -12,10 +17,16 @@ interface UseRecorderReturn {
   isTranscribing: boolean;
   isSpeechSupported: boolean;
   error: string | null;
+  availableDevices: AudioDevice[];
+  selectedDeviceId: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   reset: () => void;
+  loadDevices: () => Promise<void>;
+  setSelectedDevice: (deviceId: string) => void;
 }
+
+const STORAGE_KEY = 'selectedAudioDeviceId';
 
 export const useRecorder = (): UseRecorderReturn => {
   const [state, setState] = useState<RecorderState>('idle');
@@ -23,6 +34,8 @@ export const useRecorder = (): UseRecorderReturn => {
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [availableDevices, setAvailableDevices] = useState<AudioDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
   // 音声認識フックを使用
   const {
@@ -40,16 +53,75 @@ export const useRecorder = (): UseRecorderReturn => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
 
+  // デバイスリストを取得
+  const loadDevices = useCallback(async () => {
+    try {
+      // まず一度許可を求める（デバイスラベルを取得するため）
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // デバイスリストを取得
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices
+        .filter(device => device.kind === 'audioinput')
+        .map(device => ({
+          deviceId: device.deviceId,
+          label: device.label || `マイク ${device.deviceId.slice(0, 8)}`,
+        }));
+
+      setAvailableDevices(audioInputs);
+
+      // 一時的なストリームを停止
+      tempStream.getTracks().forEach(track => track.stop());
+
+      // localStorageから選択されたデバイスIDを取得
+      const savedDeviceId = localStorage.getItem(STORAGE_KEY);
+
+      // 保存されたデバイスIDが有効かチェック
+      const savedDeviceExists = savedDeviceId && audioInputs.some(d => d.deviceId === savedDeviceId);
+
+      // 選択されたデバイスが存在しない場合、最初のデバイスを選択
+      if (audioInputs.length > 0 && !savedDeviceExists) {
+        const firstDeviceId = audioInputs[0].deviceId;
+        setSelectedDeviceId(firstDeviceId);
+        localStorage.setItem(STORAGE_KEY, firstDeviceId);
+      } else if (savedDeviceExists) {
+        setSelectedDeviceId(savedDeviceId);
+      }
+    } catch (err) {
+      console.error('デバイスリスト取得エラー:', err);
+      setError('マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');
+    }
+  }, []); // 依存配列を空にして無限ループを防ぐ
+
+  // デバイスを選択
+  const setSelectedDevice = useCallback((deviceId: string) => {
+    setSelectedDeviceId(deviceId);
+    localStorage.setItem(STORAGE_KEY, deviceId);
+  }, []);
+
+  // 初回マウント時にデバイスリストを取得
+  useEffect(() => {
+    loadDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 初回マウント時のみ実行
+
   const startRecording = useCallback(async () => {
     try {
       setError(null);
 
-      // マイクへのアクセスを要求
+      // マイクへのアクセスを要求（選択されたデバイスを使用）
+      const audioConstraints: MediaTrackConstraints = {
+        channelCount: 1,
+        sampleRate: 48000,
+      };
+
+      // デバイスIDが選択されている場合は、そのデバイスを使用
+      if (selectedDeviceId) {
+        audioConstraints.deviceId = { exact: selectedDeviceId };
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 48000,
-        }
+        audio: audioConstraints,
       });
       streamRef.current = stream;
 
@@ -123,7 +195,7 @@ export const useRecorder = (): UseRecorderReturn => {
       );
       setState('idle');
     }
-  }, [startListening]);
+  }, [startListening, selectedDeviceId]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -169,8 +241,12 @@ export const useRecorder = (): UseRecorderReturn => {
     isTranscribing: isListening,
     isSpeechSupported: isSupported,
     error,
+    availableDevices,
+    selectedDeviceId,
     startRecording,
     stopRecording,
     reset,
+    loadDevices,
+    setSelectedDevice,
   };
 };
