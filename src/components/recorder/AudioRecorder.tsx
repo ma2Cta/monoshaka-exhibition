@@ -14,9 +14,12 @@ export default function AudioRecorder() {
     recordedUrl,
     duration,
     transcription,
+    availableDevices,
+    selectedDeviceId,
     startRecording,
     stopRecording,
     reset,
+    setSelectedDevice,
   } = useRecorder();
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -259,9 +262,30 @@ export default function AudioRecorder() {
                 <Mic className="h-12 w-12 text-gray-600 dark:text-gray-400" />
               </div>
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
                   録音を開始
                 </h2>
+
+                {/* マイク選択 */}
+                {availableDevices.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      マイクを選択
+                    </label>
+                    <select
+                      value={selectedDeviceId || ''}
+                      onChange={(e) => setSelectedDevice(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100"
+                    >
+                      {availableDevices.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   下のボタンを押して録音を開始してください
                 </p>
