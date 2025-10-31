@@ -8,6 +8,7 @@ import {
 } from '@/lib/supabase';
 import RecordingList from '@/components/admin/RecordingList';
 import Statistics from '@/components/admin/Statistics';
+import AudioFileUploader from '@/components/admin/AudioFileUploader';
 import Header from '@/components/layout/Header';
 import type { Recording } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -103,6 +104,14 @@ export default function PlaylistDetailPage() {
           <p className="text-muted-foreground">
             録音数: {recordings.length}件
           </p>
+        </div>
+
+        {/* ファイルアップロード */}
+        <div>
+          <AudioFileUploader
+            playlistId={playlistId}
+            onUploadComplete={loadPlaylistData}
+          />
         </div>
 
         {/* 統計情報 */}
