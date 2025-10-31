@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { uploadRecording, getActivePlaylist, addRecordingToPlaylist } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Loader2, Mic, Square, Send, CheckCircle2, Keyboard } from 'lucide-react';
-import type { Recording } from '@/lib/types';
+import type { Recording, Playlist } from '@/lib/types';
 
 export default function AudioRecorder() {
   const {
@@ -22,6 +22,7 @@ export default function AudioRecorder() {
   } = useRecorder();
 
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success'>('idle');
+  const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
 
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -80,6 +81,20 @@ export default function AudioRecorder() {
     }
     startRecording();
   }, [state, reset, startRecording]);
+
+  // 有効なプレイリストを取得
+  useEffect(() => {
+    const fetchActivePlaylist = async () => {
+      try {
+        const playlist = await getActivePlaylist();
+        setActivePlaylist(playlist);
+      } catch (error) {
+        console.error('Failed to fetch active playlist:', error);
+      }
+    };
+
+    fetchActivePlaylist();
+  }, []);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -146,6 +161,20 @@ export default function AudioRecorder() {
       )}
 
       <div className="w-full max-w-2xl">
+        {/* 現在有効なプレイリスト表示 */}
+        {activePlaylist && (
+          <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="text-center">
+              <p className="text-sm text-blue-800 dark:text-blue-300 font-medium">
+                現在のプレイリスト
+              </p>
+              <p className="text-lg font-semibold text-blue-900 dark:text-blue-100 mt-1">
+                {activePlaylist.name}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="text-center space-y-8">
           {state === 'recording' && (
             <div className="space-y-6">
