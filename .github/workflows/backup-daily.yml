@@ -66,22 +66,28 @@ jobs:
           CUTOFF_DATE=$(date -d "90 days ago" +%Y-%m-%d 2>/dev/null || date -v-90d +%Y-%m-%d)
           echo "Cutoff date: $CUTOFF_DATE"
 
-          # すべてのDraftリリースを取得
-          gh release list --limit 1000 | grep "Draft" | while read -r line; do
-            # リリース名から日付を抽出 (backup-YYYY-MM-DD形式を想定)
-            RELEASE_TAG=$(echo "$line" | awk '{print $1}')
-            RELEASE_DATE=$(echo "$RELEASE_TAG" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          # すべてのDraftリリースを取得（grepがマッチしない場合もエラーにしない）
+          DRAFT_RELEASES=$(gh release list --limit 1000 | grep "Draft" || true)
 
-            if [ -n "$RELEASE_DATE" ]; then
-              # 日付を比較（文字列比較で十分）
-              if [ "$RELEASE_DATE" \< "$CUTOFF_DATE" ]; then
-                echo "Deleting old backup: $RELEASE_TAG (date: $RELEASE_DATE)"
-                gh release delete "$RELEASE_TAG" --yes --cleanup-tag
-              else
-                echo "Keeping backup: $RELEASE_TAG (date: $RELEASE_DATE)"
+          if [ -z "$DRAFT_RELEASES" ]; then
+            echo "No draft releases found. Nothing to clean up."
+          else
+            echo "$DRAFT_RELEASES" | while read -r line; do
+              # リリース名から日付を抽出 (backup-YYYY-MM-DD形式を想定)
+              RELEASE_TAG=$(echo "$line" | awk '{print $1}')
+              RELEASE_DATE=$(echo "$RELEASE_TAG" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)
+
+              if [ -n "$RELEASE_DATE" ]; then
+                # 日付を比較（文字列比較で十分）
+                if [ "$RELEASE_DATE" \< "$CUTOFF_DATE" ]; then
+                  echo "Deleting old backup: $RELEASE_TAG (date: $RELEASE_DATE)"
+                  gh release delete "$RELEASE_TAG" --yes --cleanup-tag
+                else
+                  echo "Keeping backup: $RELEASE_TAG (date: $RELEASE_DATE)"
+                fi
               fi
-            fi
-          done
+            done
+          fi
 
           echo "Cleanup completed"
 
