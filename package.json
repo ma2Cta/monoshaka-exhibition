@@ -13,7 +13,8 @@
     "db:migrate:local": "npx supabase migration up",
     "db:migrate:prod": "npx supabase db push --linked",
     "user:create:local": "npx tsx scripts/create-test-user.ts",
-    "user:create:prod": "npx tsx scripts/create-prod-user.ts"
+    "user:create:prod": "npx tsx scripts/create-prod-user.ts",
+    "backup:daily": "npx tsx scripts/backup-daily.ts"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -35,9 +36,11 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/archiver": "^6.0.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "archiver": "^7.0.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
     "supabase": "^2.48.3",
