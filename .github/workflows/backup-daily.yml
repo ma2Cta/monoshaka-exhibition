@@ -1,0 +1,94 @@
+name: Daily Backup
+
+on:
+  # 毎日深夜2時（JST）に実行 = UTC 17時
+  schedule:
+    - cron: '0 17 * * *'
+  # 手動実行も可能
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Releasesの作成に必要
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backup script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npm run backup:daily
+
+      - name: Get today's date
+        id: date
+        run: echo "TODAY=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Create Draft Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BACKUP_FILE="backup-${{ steps.date.outputs.TODAY }}.zip"
+
+          if [ ! -f "$BACKUP_FILE" ]; then
+            echo "Error: Backup file not found: $BACKUP_FILE"
+            exit 1
+          fi
+
+          # Draftリリースを作成
+          gh release create "backup-${{ steps.date.outputs.TODAY }}" \
+            "$BACKUP_FILE" \
+            --title "Backup - ${{ steps.date.outputs.TODAY }}" \
+            --notes "Daily incremental backup for ${{ steps.date.outputs.TODAY }}" \
+            --draft
+
+      - name: Cleanup old draft releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Cleaning up draft releases older than 90 days..."
+
+          # 90日前の日付を計算
+          CUTOFF_DATE=$(date -d "90 days ago" +%Y-%m-%d 2>/dev/null || date -v-90d +%Y-%m-%d)
+          echo "Cutoff date: $CUTOFF_DATE"
+
+          # すべてのDraftリリースを取得
+          gh release list --limit 1000 | grep "Draft" | while read -r line; do
+            # リリース名から日付を抽出 (backup-YYYY-MM-DD形式を想定)
+            RELEASE_TAG=$(echo "$line" | awk '{print $1}')
+            RELEASE_DATE=$(echo "$RELEASE_TAG" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
+            if [ -n "$RELEASE_DATE" ]; then
+              # 日付を比較（文字列比較で十分）
+              if [ "$RELEASE_DATE" \< "$CUTOFF_DATE" ]; then
+                echo "Deleting old backup: $RELEASE_TAG (date: $RELEASE_DATE)"
+                gh release delete "$RELEASE_TAG" --yes --cleanup-tag
+              else
+                echo "Keeping backup: $RELEASE_TAG (date: $RELEASE_DATE)"
+              fi
+            fi
+          done
+
+          echo "Cleanup completed"
+
+      - name: Upload backup as artifact (fallback)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ steps.date.outputs.TODAY }}
+          path: backup-${{ steps.date.outputs.TODAY }}.zip
+          retention-days: 7
