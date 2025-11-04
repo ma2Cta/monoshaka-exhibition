@@ -103,6 +103,9 @@ export default function AudioRecorder() {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
+      // 長押しによるリピートイベントを無視
+      if (e.repeat) return;
+
       switch (e.key.toLowerCase()) {
         case 's':
           e.preventDefault();
