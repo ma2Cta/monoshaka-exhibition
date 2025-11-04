@@ -428,28 +428,26 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
               </Button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="flex items-center gap-2">
               <span className="text-muted-foreground italic">なし</span>
-              <div>
-                <Button
-                  onClick={() => handleTranscribe(recording.id, recording.file_path)}
-                  disabled={transcribingId === recording.id}
-                  size="sm"
-                  variant="outline"
-                >
-                  {transcribingId === recording.id ? (
-                    <>
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      生成中...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="mr-1 h-3 w-3" />
-                      生成
-                    </>
-                  )}
-                </Button>
-              </div>
+              <Button
+                onClick={() => handleTranscribe(recording.id, recording.file_path)}
+                disabled={transcribingId === recording.id}
+                size="sm"
+                variant="outline"
+              >
+                {transcribingId === recording.id ? (
+                  <>
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    生成中...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="mr-1 h-3 w-3" />
+                    生成
+                  </>
+                )}
+              </Button>
             </div>
           )}
         </TableCell>
