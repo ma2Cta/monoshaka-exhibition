@@ -43,6 +43,14 @@ export default function Header({ showNav = true }: HeaderProps) {
                   録音
                 </Link>
                 <Link
+                  href="/record/feedback"
+                  className={`text-sm hover:text-foreground transition-colors ${
+                    pathname === '/record/feedback' ? 'font-bold text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  録音（FB付）
+                </Link>
+                <Link
                   href="/play"
                   className={`text-sm hover:text-foreground transition-colors ${
                     pathname === '/play' ? 'font-bold text-foreground' : 'text-muted-foreground'
