@@ -443,3 +443,26 @@ export async function reorderPlaylistRecordings(
     throw new Error(`並び替えエラー: ${errorMessage}`);
   }
 }
+
+/**
+ * 録音の文字起こしを更新する
+ * @param id 録音のID
+ * @param transcription 文字起こしテキスト
+ */
+export async function updateRecordingTranscription(
+  id: string,
+  transcription: string
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const result = await ((supabase as unknown as SupabaseClient<Database>)
+    .from('recordings')
+    .update({ transcription } as unknown as never)
+    .eq('id', id) as unknown);
+
+  const { error } = result as { error: unknown };
+
+  if (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`更新エラー: ${errorMessage}`);
+  }
+}
