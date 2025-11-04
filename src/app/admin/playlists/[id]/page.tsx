@@ -122,7 +122,7 @@ export default function PlaylistDetailPage() {
 
         {/* 録音一覧 */}
         <div>
-          <RecordingList recordings={recordings} onUpdate={loadPlaylistData} />
+          <RecordingList recordings={recordings} onUpdate={loadPlaylistData} playlistId={playlistId} />
         </div>
       </div>
     </div>
