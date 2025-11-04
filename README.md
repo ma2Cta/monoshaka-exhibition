@@ -124,6 +124,32 @@ npm run db:migrate:remote
 
 **警告:** 開発段階では絶対にリモートDBのマイグレーションを実行しないでください。
 
+## 本番環境へのデプロイ（Vercel）
+
+### 必要な環境変数
+
+Vercelのプロジェクト設定で以下の環境変数を設定してください：
+
+#### 必須
+- `SUPABASE_URL` - SupabaseプロジェクトのURL（例: `https://xxxxx.supabase.co`）
+- `SUPABASE_SERVICE_ROLE_KEY` - SupabaseのService Role Key（Settings > API > service_role）
+- `OPENAI_API_KEY` - OpenAI APIキー（文字起こし機能用）
+
+#### オプション
+- `NEXT_PUBLIC_SUPABASE_URL` - 同じSupabaseプロジェクトURL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabaseの公開用Anon Key
+
+### 設定手順
+
+1. Vercelダッシュボードでプロジェクトを選択
+2. **Settings** → **Environment Variables** に移動
+3. 上記の環境変数を追加
+4. **Production**, **Preview**, **Development** すべてにチェック
+5. **Save** をクリック
+6. 再デプロイ
+
+⚠️ **注意**: `SUPABASE_SERVICE_ROLE_KEY`は機密情報です。絶対にコミットしないでください。
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
