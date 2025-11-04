@@ -422,25 +422,17 @@ export async function reorderPlaylistRecordings(
   recordingIds: string[]
 ): Promise<void> {
   const supabase = getSupabaseClient();
-  // 各録音のorder_indexを更新
-  const updates = recordingIds.map((recordingId, index) =>
-    (supabase as unknown as SupabaseClient<Database>)
-      .from('playlist_recordings')
-      .update({ order_index: index } as unknown as never)
-      .eq('playlist_id', playlistId)
-      .eq('recording_id', recordingId)
-  );
 
-  const results = await Promise.all(updates);
+  // カスタムPostgreSQL関数を使用して、1回のAPI呼び出しで一括更新
+  // これにより、N件のレコードでもAPIコール数は1回のみ
+  const { error } = await (supabase as unknown as SupabaseClient<Database>)
+    .rpc('reorder_playlist_recordings', {
+      p_playlist_id: playlistId,
+      p_recording_ids: recordingIds,
+    } as never);
 
-  const errors = results.filter((result) => {
-    const r = result as { error?: unknown };
-    return r.error;
-  });
-  if (errors.length > 0) {
-    const firstError = (errors[0] as { error?: unknown }).error;
-    const errorMessage = firstError instanceof Error ? firstError.message : String(firstError);
-    throw new Error(`並び替えエラー: ${errorMessage}`);
+  if (error) {
+    throw new Error(`並び替えエラー: ${error.message}`);
   }
 }
 

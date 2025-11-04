@@ -2,21 +2,39 @@
 
 import { useState, useEffect } from 'react';
 import { Recording } from '@/lib/types';
-import { getRecordingUrl, deleteRecording, updateRecordingTranscription } from '@/lib/supabase';
+import { getRecordingUrl, deleteRecording, updateRecordingTranscription, reorderPlaylistRecordings } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Play, Square, Trash2, Loader2, FileText, Edit, Save, X } from 'lucide-react';
+import { Play, Square, Trash2, Loader2, FileText, Edit, Save, X, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface RecordingListProps {
   recordings?: Recording[];
   onUpdate?: () => void | Promise<void>;
+  playlistId?: string; // プレイリストID（指定時のみドラッグ&ドロップ有効）
 }
 
-export default function RecordingList({ recordings: propRecordings, onUpdate }: RecordingListProps = {}) {
+export default function RecordingList({ recordings: propRecordings, onUpdate, playlistId }: RecordingListProps = {}) {
   const [recordings, setRecordings] = useState<Recording[]>(propRecordings || []);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -28,6 +46,17 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
   const [editingTranscriptionId, setEditingTranscriptionId] = useState<string | null>(null);
   const [editingTranscriptionText, setEditingTranscriptionText] = useState('');
   const [savingTranscriptionId, setSavingTranscriptionId] = useState<string | null>(null);
+
+  // ドラッグ&ドロップのセンサー設定
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // ドラッグ&ドロップが有効かどうか
+  const isDragEnabled = !!playlistId;
 
   // propRecordingsが変更されたら内部stateを更新
   useEffect(() => {
@@ -237,6 +266,234 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
     }
   }
 
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id || !playlistId) {
+      return;
+    }
+
+    const oldIndex = recordings.findIndex((r) => r.id === active.id);
+    const newIndex = recordings.findIndex((r) => r.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) {
+      return;
+    }
+
+    // 元のrecordingsを保存（ロールバック用）
+    const originalRecordings = recordings;
+
+    // 楽観的更新：UIを即座に更新
+    const newRecordings = arrayMove(recordings, oldIndex, newIndex);
+    setRecordings(newRecordings);
+
+    try {
+      // バックエンドに順番を保存
+      const recordingIds = newRecordings.map((r) => r.id);
+      console.log('並び替え保存中:', { playlistId, recordingIds });
+      await reorderPlaylistRecordings(playlistId, recordingIds);
+      console.log('並び替え保存成功');
+
+      // 成功時はUIが既に更新されているので、onUpdateは呼ばない
+      // これによりページリロードを防ぐ
+    } catch (err) {
+      console.error('並び替えエラー:', err);
+      alert('並び替えに失敗しました');
+      // エラー時は元の順番にロールバック
+      setRecordings(originalRecordings);
+      // データとUIの整合性を保つためonUpdateを呼ぶ
+      if (onUpdate) {
+        await onUpdate();
+      }
+    }
+  }
+
+  // ドラッグ可能なテーブル行コンポーネント
+  function SortableRow({ recording }: { recording: Recording }) {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: recording.id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+      <TableRow ref={setNodeRef} style={style}>
+        {isDragEnabled && (
+          <TableCell className="w-10">
+            <button
+              type="button"
+              className="cursor-grab active:cursor-grabbing touch-none p-1 hover:bg-muted rounded"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-5 w-5 text-muted-foreground" />
+            </button>
+          </TableCell>
+        )}
+        <TableCell className="whitespace-nowrap">
+          {formatDate(recording.created_at)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap">
+          {formatDuration(recording.duration)}
+        </TableCell>
+        <TableCell>
+          {editingTranscriptionId === recording.id ? (
+            <div className="max-w-md space-y-2">
+              <Textarea
+                value={editingTranscriptionText}
+                onChange={(e) => setEditingTranscriptionText(e.target.value)}
+                className="min-h-[100px]"
+                placeholder="文字起こしを入力..."
+              />
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={() => handleSaveTranscription(recording.id)}
+                  disabled={savingTranscriptionId === recording.id || transcribingId === recording.id}
+                  size="sm"
+                  variant="default"
+                >
+                  {savingTranscriptionId === recording.id ? (
+                    <>
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      保存中...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-1 h-3 w-3" />
+                      保存
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => handleTranscribe(recording.id, recording.file_path, true)}
+                  disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {transcribingId === recording.id ? (
+                    <>
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-1 h-3 w-3" />
+                      再生成
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleCancelEdit}
+                  disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                  size="sm"
+                  variant="outline"
+                >
+                  <X className="mr-1 h-3 w-3" />
+                  キャンセル
+                </Button>
+              </div>
+            </div>
+          ) : recording.transcription ? (
+            <div className="flex items-start gap-2">
+              <div className="flex-1 max-w-md">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-sm line-clamp-2 cursor-help">
+                        {recording.transcription}
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-md whitespace-pre-wrap">
+                      <p className="text-sm">{recording.transcription}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Button
+                onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <span className="text-muted-foreground italic">なし</span>
+              <div>
+                <Button
+                  onClick={() => handleTranscribe(recording.id, recording.file_path)}
+                  disabled={transcribingId === recording.id}
+                  size="sm"
+                  variant="outline"
+                >
+                  {transcribingId === recording.id ? (
+                    <>
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-1 h-3 w-3" />
+                      生成
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </TableCell>
+        <TableCell className="text-right space-x-2">
+          <Button
+            onClick={() => handlePlay(recording.id, recording.file_path)}
+            variant={playingId === recording.id ? "destructive" : "default"}
+            size="sm"
+          >
+            {playingId === recording.id ? (
+              <>
+                <Square className="mr-1 h-3 w-3" />
+                停止
+              </>
+            ) : (
+              <>
+                <Play className="mr-1 h-3 w-3" />
+                再生
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={() => openDeleteDialog(recording.id, recording.file_path)}
+            disabled={deletingId === recording.id}
+            variant="destructive"
+            size="sm"
+          >
+            {deletingId === recording.id ? (
+              <>
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                削除中...
+              </>
+            ) : (
+              <>
+                <Trash2 className="mr-1 h-3 w-3" />
+                削除
+              </>
+            )}
+          </Button>
+        </TableCell>
+      </TableRow>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -260,175 +517,35 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
             録音データがありません
           </div>
         ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>作成日時</TableHead>
-                  <TableHead>再生時間</TableHead>
-                  <TableHead>文字起こし</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recordings.map((recording) => (
-                  <TableRow key={recording.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDate(recording.created_at)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDuration(recording.duration)}
-                    </TableCell>
-                    <TableCell>
-                      {editingTranscriptionId === recording.id ? (
-                        <div className="max-w-md space-y-2">
-                          <Textarea
-                            value={editingTranscriptionText}
-                            onChange={(e) => setEditingTranscriptionText(e.target.value)}
-                            className="min-h-[100px]"
-                            placeholder="文字起こしを入力..."
-                          />
-                          <div className="flex gap-2 flex-wrap">
-                            <Button
-                              onClick={() => handleSaveTranscription(recording.id)}
-                              disabled={savingTranscriptionId === recording.id || transcribingId === recording.id}
-                              size="sm"
-                              variant="default"
-                            >
-                              {savingTranscriptionId === recording.id ? (
-                                <>
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  保存中...
-                                </>
-                              ) : (
-                                <>
-                                  <Save className="mr-1 h-3 w-3" />
-                                  保存
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              onClick={() => handleTranscribe(recording.id, recording.file_path, true)}
-                              disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
-                              size="sm"
-                              variant="secondary"
-                            >
-                              {transcribingId === recording.id ? (
-                                <>
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  生成中...
-                                </>
-                              ) : (
-                                <>
-                                  <FileText className="mr-1 h-3 w-3" />
-                                  再生成
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              onClick={handleCancelEdit}
-                              disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
-                              size="sm"
-                              variant="outline"
-                            >
-                              <X className="mr-1 h-3 w-3" />
-                              キャンセル
-                            </Button>
-                          </div>
-                        </div>
-                      ) : recording.transcription ? (
-                        <div className="flex items-start gap-2">
-                          <div className="flex-1 max-w-md">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <p className="text-sm line-clamp-2 cursor-help">
-                                    {recording.transcription}
-                                  </p>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-md whitespace-pre-wrap">
-                                  <p className="text-sm">{recording.transcription}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                          <Button
-                            onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
-                            size="sm"
-                            variant="ghost"
-                            className="shrink-0"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <span className="text-muted-foreground italic">なし</span>
-                          <div>
-                            <Button
-                              onClick={() => handleTranscribe(recording.id, recording.file_path)}
-                              disabled={transcribingId === recording.id}
-                              size="sm"
-                              variant="outline"
-                            >
-                              {transcribingId === recording.id ? (
-                                <>
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  生成中...
-                                </>
-                              ) : (
-                                <>
-                                  <FileText className="mr-1 h-3 w-3" />
-                                  生成
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        onClick={() => handlePlay(recording.id, recording.file_path)}
-                        variant={playingId === recording.id ? "destructive" : "default"}
-                        size="sm"
-                      >
-                        {playingId === recording.id ? (
-                          <>
-                            <Square className="mr-1 h-3 w-3" />
-                            停止
-                          </>
-                        ) : (
-                          <>
-                            <Play className="mr-1 h-3 w-3" />
-                            再生
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        onClick={() => openDeleteDialog(recording.id, recording.file_path)}
-                        disabled={deletingId === recording.id}
-                        variant="destructive"
-                        size="sm"
-                      >
-                        {deletingId === recording.id ? (
-                          <>
-                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                            削除中...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="mr-1 h-3 w-3" />
-                            削除
-                          </>
-                        )}
-                      </Button>
-                    </TableCell>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {isDragEnabled && <TableHead className="w-10"></TableHead>}
+                    <TableHead>作成日時</TableHead>
+                    <TableHead>再生時間</TableHead>
+                    <TableHead>文字起こし</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <SortableContext
+                  items={recordings.map((r) => r.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <TableBody>
+                    {recordings.map((recording) => (
+                      <SortableRow key={recording.id} recording={recording} />
+                    ))}
+                  </TableBody>
+                </SortableContext>
+              </Table>
+            </div>
+          </DndContext>
         )}
       </CardContent>
 
