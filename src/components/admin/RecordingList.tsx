@@ -337,29 +337,29 @@ export default function RecordingList({ recordings: propRecordings, onUpdate }: 
                           </div>
                         </div>
                       ) : recording.transcription ? (
-                        <div className="max-w-md">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <p className="text-sm line-clamp-2 cursor-help">
-                                  {recording.transcription}
-                                </p>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-md whitespace-pre-wrap">
-                                <p className="text-sm">{recording.transcription}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <div className="mt-2">
-                            <Button
-                              onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
-                              size="sm"
-                              variant="outline"
-                            >
-                              <Edit className="mr-1 h-3 w-3" />
-                              編集
-                            </Button>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 max-w-md">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <p className="text-sm line-clamp-2 cursor-help">
+                                    {recording.transcription}
+                                  </p>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-md whitespace-pre-wrap">
+                                  <p className="text-sm">{recording.transcription}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
+                          <Button
+                            onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
+                            size="sm"
+                            variant="ghost"
+                            className="shrink-0"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
                         </div>
                       ) : (
                         <div className="space-y-2">
