@@ -445,16 +445,27 @@ export async function updateRecordingTranscription(
   id: string,
   transcription: string
 ): Promise<void> {
+  console.log('updateRecordingTranscription 開始:', { id, transcription });
   const supabase = getSupabaseClient();
-  const result = await ((supabase as unknown as SupabaseClient<Database>)
-    .from('recordings')
-    .update({ transcription } as unknown as never)
-    .eq('id', id) as unknown);
 
-  const { error } = result as { error: unknown };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('recordings')
+    .update({ transcription })
+    .eq('id', id)
+    .select();
+
+  console.log('Supabase update 結果:', { data, error });
 
   if (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`更新エラー: ${errorMessage}`);
+    console.error('updateRecordingTranscription error:', error);
+    throw new Error(`更新エラー: ${error.message || String(error)}`);
   }
+
+  if (!data || data.length === 0) {
+    console.error('更新されたレコードが0件です');
+    throw new Error('更新されたレコードがありません。レコードが存在しないか、権限がない可能性があります。');
+  }
+
+  console.log('updateRecordingTranscription 成功:', data);
 }

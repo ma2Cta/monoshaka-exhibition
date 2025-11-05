@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Recording } from '@/lib/types';
 import { getRecordingUrl, deleteRecording, updateRecordingTranscription, reorderPlaylistRecordings } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,247 @@ interface RecordingListProps {
   onUpdate?: () => void | Promise<void>;
   playlistId?: string; // プレイリストID（指定時のみドラッグ&ドロップ有効）
 }
+
+// ヘルパー関数
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return '不明';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+// SortableRowコンポーネントのProps型定義
+interface SortableRowProps {
+  recording: Recording;
+  isDragEnabled: boolean;
+  editingTranscriptionId: string | null;
+  editingTranscriptionText: string;
+  setEditingTranscriptionText: (text: string) => void;
+  savingTranscriptionId: string | null;
+  transcribingId: string | null;
+  playingId: string | null;
+  deletingId: string | null;
+  handleSaveTranscription: (id: string) => void;
+  handleTranscribe: (id: string, filePath: string, isRegenerate?: boolean) => void;
+  handleCancelEdit: () => void;
+  handleEditTranscription: (id: string, text: string) => void;
+  handlePlay: (id: string, filePath: string) => void;
+  openDeleteDialog: (id: string, filePath: string) => void;
+}
+
+// ドラッグ可能なテーブル行コンポーネント
+const SortableRow = React.memo(function SortableRow({
+  recording,
+  isDragEnabled,
+  editingTranscriptionId,
+  editingTranscriptionText,
+  setEditingTranscriptionText,
+  savingTranscriptionId,
+  transcribingId,
+  playingId,
+  deletingId,
+  handleSaveTranscription,
+  handleTranscribe,
+  handleCancelEdit,
+  handleEditTranscription,
+  handlePlay,
+  openDeleteDialog,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: recording.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      {isDragEnabled && (
+        <TableCell className="w-10">
+          <button
+            type="button"
+            className="cursor-grab active:cursor-grabbing touch-none p-1 hover:bg-muted rounded"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-5 w-5 text-muted-foreground" />
+          </button>
+        </TableCell>
+      )}
+      <TableCell className="whitespace-nowrap">
+        {formatDate(recording.created_at)}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        {formatDuration(recording.duration)}
+      </TableCell>
+      <TableCell>
+        {editingTranscriptionId === recording.id ? (
+          <div className="max-w-md space-y-2">
+            <Textarea
+              value={editingTranscriptionText}
+              onChange={(e) => setEditingTranscriptionText(e.target.value)}
+              className="min-h-[100px]"
+              placeholder="文字起こしを入力..."
+            />
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                type="button"
+                onClick={() => handleSaveTranscription(recording.id)}
+                disabled={savingTranscriptionId === recording.id || transcribingId === recording.id}
+                size="sm"
+                variant="default"
+              >
+                {savingTranscriptionId === recording.id ? (
+                  <>
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    保存中...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-1 h-3 w-3" />
+                    保存
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleTranscribe(recording.id, recording.file_path, true)}
+                disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                size="sm"
+                variant="secondary"
+              >
+                {transcribingId === recording.id ? (
+                  <>
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    生成中...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="mr-1 h-3 w-3" />
+                    再生成
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                size="sm"
+                variant="outline"
+              >
+                <X className="mr-1 h-3 w-3" />
+                キャンセル
+              </Button>
+            </div>
+          </div>
+        ) : recording.transcription ? (
+          <div className="flex items-start gap-2">
+            <div className="flex-1 max-w-md">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-sm line-clamp-2 cursor-help">
+                      {recording.transcription}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-md whitespace-pre-wrap">
+                    <p className="text-sm">{recording.transcription}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Button
+              onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground italic">なし</span>
+            <Button
+              onClick={() => handleTranscribe(recording.id, recording.file_path)}
+              disabled={transcribingId === recording.id}
+              size="sm"
+              variant="outline"
+            >
+              {transcribingId === recording.id ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  生成中...
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-1 h-3 w-3" />
+                  生成
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+      </TableCell>
+      <TableCell className="text-right space-x-2">
+        <Button
+          onClick={() => handlePlay(recording.id, recording.file_path)}
+          variant={playingId === recording.id ? "destructive" : "default"}
+          size="sm"
+        >
+          {playingId === recording.id ? (
+            <>
+              <Square className="mr-1 h-3 w-3" />
+              停止
+            </>
+          ) : (
+            <>
+              <Play className="mr-1 h-3 w-3" />
+              再生
+            </>
+          )}
+        </Button>
+        <Button
+          onClick={() => openDeleteDialog(recording.id, recording.file_path)}
+          disabled={deletingId === recording.id}
+          variant="destructive"
+          size="sm"
+        >
+          {deletingId === recording.id ? (
+            <>
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              削除中...
+            </>
+          ) : (
+            <>
+              <Trash2 className="mr-1 h-3 w-3" />
+              削除
+            </>
+          )}
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export default function RecordingList({ recordings: propRecordings, onUpdate, playlistId }: RecordingListProps = {}) {
   const [recordings, setRecordings] = useState<Recording[]>(propRecordings || []);
@@ -169,25 +410,6 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     setPlayingId(id);
   }
 
-  function formatDate(dateString: string) {
-    const date = new Date(dateString);
-    return date.toLocaleString('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  }
-
-  function formatDuration(seconds: number | null) {
-    if (seconds === null) return '-';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
-
   async function handleTranscribe(id: string, filePath: string, isRegenerate: boolean = false) {
     try {
       setTranscribingId(id);
@@ -243,9 +465,12 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
   }
 
   async function handleSaveTranscription(id: string) {
+    console.log('handleSaveTranscription 開始:', { id, text: editingTranscriptionText });
     try {
       setSavingTranscriptionId(id);
+      console.log('updateRecordingTranscription 呼び出し前');
       await updateRecordingTranscription(id, editingTranscriptionText);
+      console.log('updateRecordingTranscription 成功');
 
       // ローカルのrecordings stateを更新
       setRecordings((prevRecordings) =>
@@ -258,9 +483,18 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
       setEditingTranscriptionId(null);
       setEditingTranscriptionText('');
+      console.log('ローカルstate更新完了');
+
+      // NOTE: onUpdateは呼び出さない
+      // データベースへの保存は成功しているが、すぐに再取得すると
+      // タイミングの問題で古いデータが取得される可能性があるため、
+      // ローカルstateの更新のみで対応する
+
+      console.log('handleSaveTranscription 完了');
     } catch (err) {
       console.error('保存エラー:', err);
-      alert('文字起こしの保存に失敗しました');
+      const errorMessage = err instanceof Error ? err.message : '不明なエラー';
+      alert(`文字起こしの保存に失敗しました: ${errorMessage}`);
     } finally {
       setSavingTranscriptionId(null);
     }
@@ -308,190 +542,6 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     }
   }
 
-  // ドラッグ可能なテーブル行コンポーネント
-  function SortableRow({ recording }: { recording: Recording }) {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: recording.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-    };
-
-    return (
-      <TableRow ref={setNodeRef} style={style}>
-        {isDragEnabled && (
-          <TableCell className="w-10">
-            <button
-              type="button"
-              className="cursor-grab active:cursor-grabbing touch-none p-1 hover:bg-muted rounded"
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="h-5 w-5 text-muted-foreground" />
-            </button>
-          </TableCell>
-        )}
-        <TableCell className="whitespace-nowrap">
-          {formatDate(recording.created_at)}
-        </TableCell>
-        <TableCell className="whitespace-nowrap">
-          {formatDuration(recording.duration)}
-        </TableCell>
-        <TableCell>
-          {editingTranscriptionId === recording.id ? (
-            <div className="max-w-md space-y-2">
-              <Textarea
-                value={editingTranscriptionText}
-                onChange={(e) => setEditingTranscriptionText(e.target.value)}
-                className="min-h-[100px]"
-                placeholder="文字起こしを入力..."
-              />
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  onClick={() => handleSaveTranscription(recording.id)}
-                  disabled={savingTranscriptionId === recording.id || transcribingId === recording.id}
-                  size="sm"
-                  variant="default"
-                >
-                  {savingTranscriptionId === recording.id ? (
-                    <>
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      保存中...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-1 h-3 w-3" />
-                      保存
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={() => handleTranscribe(recording.id, recording.file_path, true)}
-                  disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {transcribingId === recording.id ? (
-                    <>
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      生成中...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="mr-1 h-3 w-3" />
-                      再生成
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={handleCancelEdit}
-                  disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
-                  size="sm"
-                  variant="outline"
-                >
-                  <X className="mr-1 h-3 w-3" />
-                  キャンセル
-                </Button>
-              </div>
-            </div>
-          ) : recording.transcription ? (
-            <div className="flex items-start gap-2">
-              <div className="flex-1 max-w-md">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <p className="text-sm line-clamp-2 cursor-help">
-                        {recording.transcription}
-                      </p>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-md whitespace-pre-wrap">
-                      <p className="text-sm">{recording.transcription}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              <Button
-                onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
-                size="sm"
-                variant="ghost"
-                className="shrink-0"
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground italic">なし</span>
-              <Button
-                onClick={() => handleTranscribe(recording.id, recording.file_path)}
-                disabled={transcribingId === recording.id}
-                size="sm"
-                variant="outline"
-              >
-                {transcribingId === recording.id ? (
-                  <>
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    生成中...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="mr-1 h-3 w-3" />
-                    生成
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-        </TableCell>
-        <TableCell className="text-right space-x-2">
-          <Button
-            onClick={() => handlePlay(recording.id, recording.file_path)}
-            variant={playingId === recording.id ? "destructive" : "default"}
-            size="sm"
-          >
-            {playingId === recording.id ? (
-              <>
-                <Square className="mr-1 h-3 w-3" />
-                停止
-              </>
-            ) : (
-              <>
-                <Play className="mr-1 h-3 w-3" />
-                再生
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={() => openDeleteDialog(recording.id, recording.file_path)}
-            disabled={deletingId === recording.id}
-            variant="destructive"
-            size="sm"
-          >
-            {deletingId === recording.id ? (
-              <>
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                削除中...
-              </>
-            ) : (
-              <>
-                <Trash2 className="mr-1 h-3 w-3" />
-                削除
-              </>
-            )}
-          </Button>
-        </TableCell>
-      </TableRow>
-    );
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -537,7 +587,24 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
                 >
                   <TableBody>
                     {recordings.map((recording) => (
-                      <SortableRow key={recording.id} recording={recording} />
+                      <SortableRow
+                        key={recording.id}
+                        recording={recording}
+                        isDragEnabled={isDragEnabled}
+                        editingTranscriptionId={editingTranscriptionId}
+                        editingTranscriptionText={editingTranscriptionText}
+                        setEditingTranscriptionText={setEditingTranscriptionText}
+                        savingTranscriptionId={savingTranscriptionId}
+                        transcribingId={transcribingId}
+                        playingId={playingId}
+                        deletingId={deletingId}
+                        handleSaveTranscription={handleSaveTranscription}
+                        handleTranscribe={handleTranscribe}
+                        handleCancelEdit={handleCancelEdit}
+                        handleEditTranscription={handleEditTranscription}
+                        handlePlay={handlePlay}
+                        openDeleteDialog={openDeleteDialog}
+                      />
                     ))}
                   </TableBody>
                 </SortableContext>
