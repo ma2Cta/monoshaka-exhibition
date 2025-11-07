@@ -52,6 +52,13 @@ export default function PlaylistDetailV2Page() {
     }
   }
 
+  function handleUploadComplete(newRecordings: Recording[]) {
+    // 新しいレコーディングを既存の配列に追加
+    // NOTE: ページ全体を再読み込みせず、ローカルstateのみを更新する
+    // これにより、PlaybackControlでの再生が中断されるのを防ぐ
+    setRecordings((prev) => [...prev, ...newRecordings]);
+  }
+
   if (isLoading) {
     return (
       <>
@@ -110,20 +117,13 @@ export default function PlaylistDetailV2Page() {
           {/* 再生コントロール */}
           <PlaybackControl playlistId={playlistId} recordingCount={recordings.length} />
 
-          {/* アクションバー */}
-          <div className="flex justify-end">
-            <Button onClick={() => setIsUploadModalOpen(true)}>
-              <Upload className="mr-2 h-4 w-4" />
-              音声をアップロード
-            </Button>
-          </div>
-
           {/* 録音一覧 */}
           <div>
             <RecordingList
               recordings={recordings}
               onUpdate={loadPlaylistData}
               playlistId={playlistId}
+              onUploadRequest={() => setIsUploadModalOpen(true)}
             />
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function PlaylistDetailV2Page() {
         playlistId={playlistId}
         open={isUploadModalOpen}
         onOpenChange={setIsUploadModalOpen}
-        onUploadComplete={loadPlaylistData}
+        onUploadComplete={handleUploadComplete}
       />
     </>
   );

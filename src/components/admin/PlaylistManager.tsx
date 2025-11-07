@@ -11,10 +11,11 @@ import {
 } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Trash2, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
 
@@ -32,6 +33,7 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activateDialogOpen, setActivateDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
       setIsCreating(true);
       await createPlaylist(newPlaylistName.trim());
       setNewPlaylistName('');
+      setCreateDialogOpen(false);
       await loadPlaylists();
     } catch (err) {
       const message = err instanceof Error ? err.message : '不明なエラー';
@@ -142,49 +145,16 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
         </Alert>
       )}
 
-      {/* プレイリスト作成フォーム */}
-      <Card>
-        <CardHeader>
-          <CardTitle>新規プレイリスト作成</CardTitle>
-          <CardDescription>録音をグループ化するプレイリストを作成します</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              value={newPlaylistName}
-              onChange={(e) => setNewPlaylistName(e.target.value)}
-              placeholder="プレイリスト名を入力"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleCreate();
-                }
-              }}
-            />
-            <Button
-              onClick={handleCreate}
-              disabled={isCreating || !newPlaylistName.trim()}
-            >
-              {isCreating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  作成中...
-                </>
-              ) : (
-                <>
-                  <Plus className="mr-2 h-4 w-4" />
-                  作成
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* プレイリスト一覧 */}
       <Card>
         <CardHeader>
-          <CardTitle>プレイリスト一覧（{playlists.length}件）</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>プレイリスト一覧（{playlists.length}件）</CardTitle>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              新規作成
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {playlists.length === 0 ? (
@@ -312,6 +282,59 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* プレイリスト作成モーダル */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新規プレイリスト作成</DialogTitle>
+            <DialogDescription>
+              録音をグループ化するプレイリストを作成します
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Input
+              type="text"
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              placeholder="プレイリスト名を入力"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleCreate();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateDialogOpen(false);
+                setNewPlaylistName('');
+              }}
+              disabled={isCreating}
+            >
+              キャンセル
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={isCreating || !newPlaylistName.trim()}
+            >
+              {isCreating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  作成中...
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  作成
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

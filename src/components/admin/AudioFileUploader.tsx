@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -9,10 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Upload, Loader2, FileAudio, X, CheckCircle2, AlertCircle, Play, Pause, GripVertical } from 'lucide-react';
 import { uploadRecording, addRecordingToPlaylist } from '@/lib/supabase';
+import type { Recording } from '@/lib/types';
 
 interface AudioFileUploaderProps {
   playlistId: string;
-  onUploadComplete: () => void;
+  onUploadComplete: (newRecordings: Recording[]) => void;
 }
 
 type FileStatus = 'pending' | 'loading_metadata' | 'ready' | 'uploading' | 'completed' | 'error';
@@ -73,7 +74,7 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
             f.id === fileItem.id ? { ...f, status: 'ready' as FileStatus, duration } : f
           )
         );
-      } catch (err) {
+      } catch {
         setFiles((prev) =>
           prev.map((f) =>
             f.id === fileItem.id
@@ -135,6 +136,7 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
 
     let completedCount = 0;
     let errorCount = 0;
+    const uploadedRecordings: Recording[] = [];
 
     // 各ファイルを順次アップロード
     for (const fileItem of readyFiles) {
@@ -155,6 +157,9 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
         // 2. プレイリストに追加
         await addRecordingToPlaylist(playlistId, recording.id);
 
+        // アップロードされたレコーディングを配列に追加
+        uploadedRecordings.push(recording);
+
         // ステータスを「完了」に更新
         setFiles((prev) =>
           prev.map((f) => (f.id === fileItem.id ? { ...f, status: 'completed' as FileStatus } : f))
@@ -174,9 +179,9 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
 
     setIsUploading(false);
 
-    // 全て完了したら親コンポーネントに通知
+    // 全て完了したら親コンポーネントに通知（新しいレコーディングを渡す）
     if (completedCount > 0) {
-      onUploadComplete();
+      onUploadComplete(uploadedRecordings);
     }
 
     // 完了したファイルを自動削除

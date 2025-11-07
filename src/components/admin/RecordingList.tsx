@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { Recording } from '@/lib/types';
-import { getRecordingUrl, deleteRecording, updateRecordingTranscription, reorderPlaylistRecordings } from '@/lib/supabase';
+import { getRecordingUrl, deleteRecording, updateRecordingTranscription, reorderPlaylistRecordings, getPlaylistRecordings } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Play, Square, Trash2, Loader2, FileText, Edit, Save, X, GripVertical } from 'lucide-react';
+import { Play, Square, Trash2, Loader2, FileText, Edit, Save, X, GripVertical, RefreshCcw, Upload, Speaker } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -32,6 +33,7 @@ interface RecordingListProps {
   recordings?: Recording[];
   onUpdate?: () => void | Promise<void>;
   playlistId?: string; // プレイリストID（指定時のみドラッグ&ドロップ有効）
+  onUploadRequest?: () => void; // アップロードモーダルを開くコールバック
 }
 
 // ヘルパー関数
@@ -275,7 +277,7 @@ const SortableRow = React.memo(function SortableRow({
   );
 });
 
-export default function RecordingList({ recordings: propRecordings, onUpdate, playlistId }: RecordingListProps = {}) {
+export default function RecordingList({ recordings: propRecordings, onUpdate, playlistId, onUploadRequest }: RecordingListProps = {}) {
   const [recordings, setRecordings] = useState<Recording[]>(propRecordings || []);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -287,6 +289,13 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
   const [editingTranscriptionId, setEditingTranscriptionId] = useState<string | null>(null);
   const [editingTranscriptionText, setEditingTranscriptionText] = useState('');
   const [savingTranscriptionId, setSavingTranscriptionId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // 音声デバイス選択用のstate
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [showDeviceList, setShowDeviceList] = useState(false);
+  const [currentAudioDevice, setCurrentAudioDevice] = useState<string>('default');
+  const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   // ドラッグ&ドロップのセンサー設定
   const sensors = useSensors(
@@ -303,6 +312,32 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
   useEffect(() => {
     setRecordings(propRecordings || []);
   }, [propRecordings]);
+
+  // 初期化時にデバイス一覧を取得
+  useEffect(() => {
+    async function initAudioDevices() {
+      if (!hasInitializedDevices && 'mediaDevices' in navigator && 'enumerateDevices' in navigator.mediaDevices) {
+        try {
+          setHasInitializedDevices(true);
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+          if (audioOutputs.length > 0) {
+            setAudioDevices(audioOutputs);
+            setShowDeviceList(true);
+
+            // localStorageから保存されたデバイスを復元
+            const savedDeviceId = localStorage.getItem('recordingListAudioDeviceId');
+            if (savedDeviceId && audioOutputs.some(d => d.deviceId === savedDeviceId)) {
+              setCurrentAudioDevice(savedDeviceId);
+            }
+          }
+        } catch (error) {
+          console.error('デバイス一覧の取得に失敗:', error);
+        }
+      }
+    }
+    initAudioDevices();
+  }, [hasInitializedDevices]);
 
   useEffect(() => {
     // クリーンアップ
@@ -335,12 +370,17 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
       setDeleteDialogOpen(false);
 
-      // 更新コールバックがあれば呼び出す
-      if (onUpdate) {
-        await onUpdate();
-      }
+      // ローカルstateから削除したレコーディングを除外
+      setRecordings((prevRecordings) =>
+        prevRecordings.filter((recording) => recording.id !== selectedRecording.id)
+      );
+
+      // NOTE: onUpdateは呼び出さない
+      // データベースからの削除は成功しているが、ページ全体を再読み込みすると
+      // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
     } catch (err) {
       console.error('削除エラー:', err);
+      alert('削除に失敗しました');
     } finally {
       setDeletingId(null);
       setSelectedRecording(null);
@@ -363,20 +403,23 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
       setDeleteAllDialogOpen(false);
 
-      // 更新コールバックがあれば呼び出す
-      if (onUpdate) {
-        await onUpdate();
-      }
+      // ローカルstateを空にする
+      setRecordings([]);
+
+      // NOTE: onUpdateは呼び出さない
+      // データベースからの削除は成功しているが、ページ全体を再読み込みすると
+      // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
     } catch (err) {
       console.error('削除エラー:', err);
-      // 更新コールバックがあれば呼び出す
+      alert('削除に失敗しました');
+      // エラー時は整合性を保つためにonUpdateを呼び出す
       if (onUpdate) {
         await onUpdate();
       }
     }
   }
 
-  function handlePlay(id: string, filePath: string) {
+  async function handlePlay(id: string, filePath: string) {
     // 既に再生中の場合は停止
     if (playingId === id && audioElement) {
       audioElement.pause();
@@ -394,6 +437,15 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     const url = getRecordingUrl(filePath);
     const audio = new Audio(url);
 
+    // 音声出力デバイスを設定
+    if (currentAudioDevice && currentAudioDevice !== 'default' && 'setSinkId' in audio) {
+      try {
+        await (audio as any).setSinkId(currentAudioDevice);
+      } catch (err) {
+        console.error('デバイス設定エラー:', err);
+      }
+    }
+
     audio.onended = () => {
       setPlayingId(null);
     };
@@ -408,6 +460,20 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
     setAudioElement(audio);
     setPlayingId(id);
+  }
+
+  async function handleDeviceSelect(deviceId: string) {
+    setCurrentAudioDevice(deviceId);
+    localStorage.setItem('recordingListAudioDeviceId', deviceId);
+
+    // 再生中の音声がある場合はデバイスを変更
+    if (audioElement && 'setSinkId' in audioElement) {
+      try {
+        await (audioElement as any).setSinkId(deviceId);
+      } catch (err) {
+        console.error('デバイス変更エラー:', err);
+      }
+    }
   }
 
   async function handleTranscribe(id: string, filePath: string, isRegenerate: boolean = false) {
@@ -500,6 +566,21 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     }
   }
 
+  async function handleRefresh() {
+    if (!playlistId) return;
+
+    try {
+      setIsRefreshing(true);
+      const recordingsData = await getPlaylistRecordings(playlistId);
+      setRecordings(recordingsData);
+    } catch (err) {
+      console.error('再読み込みエラー:', err);
+      alert('録音一覧の再読み込みに失敗しました');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
@@ -544,19 +625,59 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex justify-between items-center">
+      <CardHeader className="space-y-4">
+        <div className="flex justify-between items-center flex-wrap gap-2">
           <CardTitle>録音一覧（{recordings.length}件）</CardTitle>
-          {recordings.length > 0 && (
-            <Button
-              onClick={() => setDeleteAllDialogOpen(true)}
-              variant="destructive"
-              size="sm"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              すべて削除
-            </Button>
-          )}
+          <div className="flex gap-2 flex-wrap">
+            {playlistId && (
+              <Button
+                onClick={handleRefresh}
+                variant="outline"
+                size="sm"
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    読み込み中...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    再読み込み
+                  </>
+                )}
+              </Button>
+            )}
+            {onUploadRequest && (
+              <Button
+                onClick={onUploadRequest}
+                variant="default"
+                size="sm"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                音声をアップロード
+              </Button>
+            )}
+            {showDeviceList && (
+              <Select
+                value={currentAudioDevice || 'default'}
+                onValueChange={handleDeviceSelect}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <Speaker className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="再生デバイスを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {audioDevices.map((device) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `デバイス ${device.deviceId.slice(0, 8)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -627,24 +748,6 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
               削除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* すべて削除確認ダイアログ */}
-      <AlertDialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>すべての録音を削除しますか？</AlertDialogTitle>
-            <AlertDialogDescription>
-              すべての録音（{recordings.length}件）を削除してもよろしいですか？この操作は取り消せません。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>キャンセル</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteAll} className="bg-destructive hover:bg-destructive/90">
-              すべて削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -26,6 +26,7 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
   const [showDeviceList, setShowDeviceList] = useState(false);
   const [selectedDeviceName, setSelectedDeviceName] = useState<string>('デフォルト');
   const [actualRecordingCount, setActualRecordingCount] = useState<number>(recordingCount);
+  const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   const {
     currentIndex,
@@ -66,6 +67,14 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
       setSelectedDeviceName(savedDeviceName);
     }
   }, []);
+
+  // 初期化時にデバイス一覧を自動取得
+  useEffect(() => {
+    if (audioOutputSupported && !showDeviceList && !hasInitializedDevices) {
+      setHasInitializedDevices(true);
+      selectAudioOutput();
+    }
+  }, [audioOutputSupported, showDeviceList, hasInitializedDevices, selectAudioOutput]);
 
   // カスタムイベントでデバイス一覧を受け取る
   useEffect(() => {
@@ -116,45 +125,24 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span className="flex items-center gap-2">
+        <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
             <Speaker className="h-5 w-5" />
-            ループ再生
-          </span>
-          {isPlaying && (
-            <Badge variant="default">再生中</Badge>
-          )}
-          {!isPlaying && actualRecordingCount > 0 && !needsUserInteraction && (
-            <Badge variant="secondary">一時停止中</Badge>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* エラー表示 */}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* デバイス選択 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">音声出力デバイス</label>
-          {audioOutputSupported && !showDeviceList ? (
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={handleSelectAudioOutput}
-            >
-              <Speaker className="h-4 w-4 mr-2" />
-              {selectedDeviceName}
-            </Button>
-          ) : showDeviceList ? (
+            <span>ループ再生</span>
+            {isPlaying && (
+              <Badge variant="default">再生中</Badge>
+            )}
+            {!isPlaying && actualRecordingCount > 0 && !needsUserInteraction && (
+              <Badge variant="secondary">一時停止中</Badge>
+            )}
+          </div>
+          {/* デバイス選択 */}
+          {showDeviceList ? (
             <Select
               value={currentAudioDevice || 'default'}
               onValueChange={handleDeviceSelect}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="デバイスを選択" />
               </SelectTrigger>
               <SelectContent>
@@ -165,12 +153,16 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
                 ))}
               </SelectContent>
             </Select>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              デバイス選択は利用できません
-            </div>
-          )}
-        </div>
+          ) : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* エラー表示 */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {/* 再生コントロール */}
         <div className="flex items-center gap-4">

@@ -8,12 +8,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import AudioFileUploader from './AudioFileUploader';
+import type { Recording } from '@/lib/types';
 
 interface AudioUploadModalProps {
   playlistId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUploadComplete: () => void;
+  onUploadComplete: (newRecordings: Recording[]) => void;
 }
 
 /**
@@ -26,8 +27,8 @@ export function AudioUploadModal({
   onOpenChange,
   onUploadComplete,
 }: AudioUploadModalProps) {
-  function handleUploadComplete() {
-    onUploadComplete();
+  function handleUploadComplete(newRecordings: Recording[]) {
+    onUploadComplete(newRecordings);
     // アップロード完了後、モーダルを閉じる
     onOpenChange(false);
   }
