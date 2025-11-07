@@ -1,31 +1,28 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import {
-  getPlaylistById,
-  getPlaylistRecordings,
-} from '@/lib/supabase';
-import RecordingList from '@/components/admin/RecordingList';
-import { PlaybackControl } from '@/components/admin/PlaybackControl';
-import { AudioUploadModal } from '@/components/admin/AudioUploadModal';
-import Header from '@/components/layout/Header';
-import type { Recording } from '@/lib/types';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowLeft, Loader2, CheckCircle2, Upload } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { getPlaylistById, getPlaylistRecordings } from "@/lib/supabase";
+import RecordingList from "@/components/admin/RecordingList";
+import { PlaybackControl } from "@/components/admin/PlaybackControl";
+import { AudioUploadModal } from "@/components/admin/AudioUploadModal";
+import Header from "@/components/layout/Header";
+import type { Recording } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 
 export default function PlaylistDetailV2Page() {
   const router = useRouter();
   const params = useParams();
   const playlistId = params.id as string;
 
-  const [playlistName, setPlaylistName] = useState('');
+  const [playlistName, setPlaylistName] = useState("");
   const [playlistIsActive, setPlaylistIsActive] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   useEffect(() => {
@@ -36,7 +33,7 @@ export default function PlaylistDetailV2Page() {
   async function loadPlaylistData() {
     try {
       setIsLoading(true);
-      setError('');
+      setError("");
       const [playlist, recordingsData] = await Promise.all([
         getPlaylistById(playlistId),
         getPlaylistRecordings(playlistId),
@@ -45,7 +42,8 @@ export default function PlaylistDetailV2Page() {
       setPlaylistIsActive(playlist.is_active);
       setRecordings(recordingsData);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'データの取得に失敗しました';
+      const message =
+        err instanceof Error ? err.message : "データの取得に失敗しました";
       setError(message);
     } finally {
       setIsLoading(false);
@@ -93,7 +91,7 @@ export default function PlaylistDetailV2Page() {
           {/* ヘッダー */}
           <div>
             <Button
-              onClick={() => router.push('/admin/v2')}
+              onClick={() => router.push("/admin/v2")}
               variant="ghost"
               className="mb-4"
             >
@@ -103,7 +101,10 @@ export default function PlaylistDetailV2Page() {
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold">{playlistName}</h1>
               {playlistIsActive && (
-                <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                <Badge
+                  variant="default"
+                  className="bg-green-600 hover:bg-green-700"
+                >
                   <CheckCircle2 className="mr-1 h-3 w-3" />
                   有効
                 </Badge>
@@ -115,7 +116,10 @@ export default function PlaylistDetailV2Page() {
           </div>
 
           {/* 再生コントロール */}
-          <PlaybackControl playlistId={playlistId} recordingCount={recordings.length} />
+          <PlaybackControl
+            playlistId={playlistId}
+            recordingCount={recordings.length}
+          />
 
           {/* 録音一覧 */}
           <div>

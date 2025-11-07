@@ -1,16 +1,67 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { Recording } from '@/lib/types';
-import { getRecordingUrl, deleteRecording, updateRecordingTranscription, reorderPlaylistRecordings, getPlaylistRecordings } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Play, Square, Trash2, Loader2, FileText, Edit, Save, X, GripVertical, RefreshCcw, Upload, Speaker } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { Recording } from "@/lib/types";
+
+// setSinkIdの型定義（実験的API）
+interface HTMLAudioElementWithSinkId extends HTMLAudioElement {
+  setSinkId(deviceId: string): Promise<void>;
+}
+import {
+  getRecordingUrl,
+  deleteRecording,
+  updateRecordingTranscription,
+  reorderPlaylistRecordings,
+  getPlaylistRecordings,
+} from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Play,
+  Square,
+  Trash2,
+  Loader2,
+  FileText,
+  Edit,
+  Save,
+  X,
+  GripVertical,
+  RefreshCcw,
+  Upload,
+  Speaker,
+} from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -19,15 +70,15 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface RecordingListProps {
   recordings?: Recording[];
@@ -40,19 +91,19 @@ interface RecordingListProps {
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 function formatDuration(seconds: number | null): string {
-  if (seconds === null) return '不明';
+  if (seconds === null) return "不明";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return `${mins}:${String(secs).padStart(2, '0')}`;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 // SortableRowコンポーネントのProps型定義
@@ -67,7 +118,11 @@ interface SortableRowProps {
   playingId: string | null;
   deletingId: string | null;
   handleSaveTranscription: (id: string) => void;
-  handleTranscribe: (id: string, filePath: string, isRegenerate?: boolean) => void;
+  handleTranscribe: (
+    id: string,
+    filePath: string,
+    isRegenerate?: boolean
+  ) => void;
   handleCancelEdit: () => void;
   handleEditTranscription: (id: string, text: string) => void;
   handlePlay: (id: string, filePath: string) => void;
@@ -140,7 +195,10 @@ const SortableRow = React.memo(function SortableRow({
               <Button
                 type="button"
                 onClick={() => handleSaveTranscription(recording.id)}
-                disabled={savingTranscriptionId === recording.id || transcribingId === recording.id}
+                disabled={
+                  savingTranscriptionId === recording.id ||
+                  transcribingId === recording.id
+                }
                 size="sm"
                 variant="default"
               >
@@ -158,8 +216,13 @@ const SortableRow = React.memo(function SortableRow({
               </Button>
               <Button
                 type="button"
-                onClick={() => handleTranscribe(recording.id, recording.file_path, true)}
-                disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                onClick={() =>
+                  handleTranscribe(recording.id, recording.file_path, true)
+                }
+                disabled={
+                  transcribingId === recording.id ||
+                  savingTranscriptionId === recording.id
+                }
                 size="sm"
                 variant="secondary"
               >
@@ -178,7 +241,10 @@ const SortableRow = React.memo(function SortableRow({
               <Button
                 type="button"
                 onClick={handleCancelEdit}
-                disabled={transcribingId === recording.id || savingTranscriptionId === recording.id}
+                disabled={
+                  transcribingId === recording.id ||
+                  savingTranscriptionId === recording.id
+                }
                 size="sm"
                 variant="outline"
               >
@@ -204,7 +270,12 @@ const SortableRow = React.memo(function SortableRow({
               </TooltipProvider>
             </div>
             <Button
-              onClick={() => handleEditTranscription(recording.id, recording.transcription || '')}
+              onClick={() =>
+                handleEditTranscription(
+                  recording.id,
+                  recording.transcription || ""
+                )
+              }
               size="sm"
               variant="ghost"
               className="shrink-0"
@@ -216,7 +287,9 @@ const SortableRow = React.memo(function SortableRow({
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground italic">なし</span>
             <Button
-              onClick={() => handleTranscribe(recording.id, recording.file_path)}
+              onClick={() =>
+                handleTranscribe(recording.id, recording.file_path)
+              }
               disabled={transcribingId === recording.id}
               size="sm"
               variant="outline"
@@ -277,24 +350,40 @@ const SortableRow = React.memo(function SortableRow({
   );
 });
 
-export default function RecordingList({ recordings: propRecordings, onUpdate, playlistId, onUploadRequest }: RecordingListProps = {}) {
-  const [recordings, setRecordings] = useState<Recording[]>(propRecordings || []);
+export default function RecordingList({
+  recordings: propRecordings,
+  onUpdate,
+  playlistId,
+  onUploadRequest,
+}: RecordingListProps = {}) {
+  const [recordings, setRecordings] = useState<Recording[]>(
+    propRecordings || []
+  );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(
+    null
+  );
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
-  const [selectedRecording, setSelectedRecording] = useState<{ id: string; filePath: string } | null>(null);
+  const [selectedRecording, setSelectedRecording] = useState<{
+    id: string;
+    filePath: string;
+  } | null>(null);
   const [transcribingId, setTranscribingId] = useState<string | null>(null);
-  const [editingTranscriptionId, setEditingTranscriptionId] = useState<string | null>(null);
-  const [editingTranscriptionText, setEditingTranscriptionText] = useState('');
-  const [savingTranscriptionId, setSavingTranscriptionId] = useState<string | null>(null);
+  const [editingTranscriptionId, setEditingTranscriptionId] = useState<
+    string | null
+  >(null);
+  const [editingTranscriptionText, setEditingTranscriptionText] = useState("");
+  const [savingTranscriptionId, setSavingTranscriptionId] = useState<
+    string | null
+  >(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // 音声デバイス選択用のstate
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
-  const [currentAudioDevice, setCurrentAudioDevice] = useState<string>('default');
+  const [currentAudioDevice, setCurrentAudioDevice] =
+    useState<string>("default");
   const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   // ドラッグ&ドロップのセンサー設定
@@ -316,23 +405,34 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
   // 初期化時にデバイス一覧を取得
   useEffect(() => {
     async function initAudioDevices() {
-      if (!hasInitializedDevices && 'mediaDevices' in navigator && 'enumerateDevices' in navigator.mediaDevices) {
+      if (
+        !hasInitializedDevices &&
+        "mediaDevices" in navigator &&
+        "enumerateDevices" in navigator.mediaDevices
+      ) {
         try {
           setHasInitializedDevices(true);
           const devices = await navigator.mediaDevices.enumerateDevices();
-          const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+          const audioOutputs = devices.filter(
+            (device) => device.kind === "audiooutput"
+          );
           if (audioOutputs.length > 0) {
             setAudioDevices(audioOutputs);
             setShowDeviceList(true);
 
             // localStorageから保存されたデバイスを復元
-            const savedDeviceId = localStorage.getItem('recordingListAudioDeviceId');
-            if (savedDeviceId && audioOutputs.some(d => d.deviceId === savedDeviceId)) {
+            const savedDeviceId = localStorage.getItem(
+              "recordingListAudioDeviceId"
+            );
+            if (
+              savedDeviceId &&
+              audioOutputs.some((d) => d.deviceId === savedDeviceId)
+            ) {
               setCurrentAudioDevice(savedDeviceId);
             }
           }
         } catch (error) {
-          console.error('デバイス一覧の取得に失敗:', error);
+          console.error("デバイス一覧の取得に失敗:", error);
         }
       }
     }
@@ -344,7 +444,7 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     return () => {
       if (audioElement) {
         audioElement.pause();
-        audioElement.src = '';
+        audioElement.src = "";
       }
     };
   }, [audioElement]);
@@ -364,7 +464,7 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
       // 削除した録音が再生中だった場合は停止
       if (playingId === selectedRecording.id && audioElement) {
         audioElement.pause();
-        audioElement.src = '';
+        audioElement.src = "";
         setPlayingId(null);
       }
 
@@ -372,50 +472,20 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
       // ローカルstateから削除したレコーディングを除外
       setRecordings((prevRecordings) =>
-        prevRecordings.filter((recording) => recording.id !== selectedRecording.id)
+        prevRecordings.filter(
+          (recording) => recording.id !== selectedRecording.id
+        )
       );
 
       // NOTE: onUpdateは呼び出さない
       // データベースからの削除は成功しているが、ページ全体を再読み込みすると
       // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
     } catch (err) {
-      console.error('削除エラー:', err);
-      alert('削除に失敗しました');
+      console.error("削除エラー:", err);
+      alert("削除に失敗しました");
     } finally {
       setDeletingId(null);
       setSelectedRecording(null);
-    }
-  }
-
-  async function confirmDeleteAll() {
-    try {
-      // すべての録音を削除
-      for (const recording of recordings) {
-        await deleteRecording(recording.id, recording.file_path);
-      }
-
-      // 再生中の音声を停止
-      if (audioElement) {
-        audioElement.pause();
-        audioElement.src = '';
-      }
-      setPlayingId(null);
-
-      setDeleteAllDialogOpen(false);
-
-      // ローカルstateを空にする
-      setRecordings([]);
-
-      // NOTE: onUpdateは呼び出さない
-      // データベースからの削除は成功しているが、ページ全体を再読み込みすると
-      // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
-    } catch (err) {
-      console.error('削除エラー:', err);
-      alert('削除に失敗しました');
-      // エラー時は整合性を保つためにonUpdateを呼び出す
-      if (onUpdate) {
-        await onUpdate();
-      }
     }
   }
 
@@ -423,7 +493,7 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     // 既に再生中の場合は停止
     if (playingId === id && audioElement) {
       audioElement.pause();
-      audioElement.src = '';
+      audioElement.src = "";
       setPlayingId(null);
       return;
     }
@@ -438,11 +508,17 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     const audio = new Audio(url);
 
     // 音声出力デバイスを設定
-    if (currentAudioDevice && currentAudioDevice !== 'default' && 'setSinkId' in audio) {
+    if (
+      currentAudioDevice &&
+      currentAudioDevice !== "default" &&
+      "setSinkId" in audio
+    ) {
       try {
-        await (audio as any).setSinkId(currentAudioDevice);
+        await (audio as HTMLAudioElementWithSinkId).setSinkId(
+          currentAudioDevice
+        );
       } catch (err) {
-        console.error('デバイス設定エラー:', err);
+        console.error("デバイス設定エラー:", err);
       }
     }
 
@@ -452,9 +528,9 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
     // 再生を試みる（onerrorは設定しない）
     audio.play().catch((err) => {
-      console.error('再生開始エラー:', err);
+      console.error("再生開始エラー:", err);
       // play()のPromiseが失敗した場合のみアラートを表示
-      alert('再生に失敗しました');
+      alert("再生に失敗しました");
       setPlayingId(null);
     });
 
@@ -464,38 +540,42 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
   async function handleDeviceSelect(deviceId: string) {
     setCurrentAudioDevice(deviceId);
-    localStorage.setItem('recordingListAudioDeviceId', deviceId);
+    localStorage.setItem("recordingListAudioDeviceId", deviceId);
 
     // 再生中の音声がある場合はデバイスを変更
-    if (audioElement && 'setSinkId' in audioElement) {
+    if (audioElement && "setSinkId" in audioElement) {
       try {
-        await (audioElement as any).setSinkId(deviceId);
+        await (audioElement as HTMLAudioElementWithSinkId).setSinkId(deviceId);
       } catch (err) {
-        console.error('デバイス変更エラー:', err);
+        console.error("デバイス変更エラー:", err);
       }
     }
   }
 
-  async function handleTranscribe(id: string, filePath: string, isRegenerate: boolean = false) {
+  async function handleTranscribe(
+    id: string,
+    filePath: string,
+    isRegenerate: boolean = false
+  ) {
     try {
       setTranscribingId(id);
 
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           recordingId: id,
           filePath,
-          skipSave: isRegenerate // 編集モード時の再生成はDB保存をスキップ
+          skipSave: isRegenerate, // 編集モード時の再生成はDB保存をスキップ
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || '文字起こしに失敗しました');
+        throw new Error(data.error || "文字起こしに失敗しました");
       }
 
       if (isRegenerate && editingTranscriptionId === id) {
@@ -512,8 +592,8 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
         );
       }
     } catch (err) {
-      console.error('文字起こしエラー:', err);
-      const errorMessage = err instanceof Error ? err.message : '不明なエラー';
+      console.error("文字起こしエラー:", err);
+      const errorMessage = err instanceof Error ? err.message : "不明なエラー";
       alert(`文字起こしに失敗しました: ${errorMessage}`);
     } finally {
       setTranscribingId(null);
@@ -527,16 +607,19 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
 
   function handleCancelEdit() {
     setEditingTranscriptionId(null);
-    setEditingTranscriptionText('');
+    setEditingTranscriptionText("");
   }
 
   async function handleSaveTranscription(id: string) {
-    console.log('handleSaveTranscription 開始:', { id, text: editingTranscriptionText });
+    console.log("handleSaveTranscription 開始:", {
+      id,
+      text: editingTranscriptionText,
+    });
     try {
       setSavingTranscriptionId(id);
-      console.log('updateRecordingTranscription 呼び出し前');
+      console.log("updateRecordingTranscription 呼び出し前");
       await updateRecordingTranscription(id, editingTranscriptionText);
-      console.log('updateRecordingTranscription 成功');
+      console.log("updateRecordingTranscription 成功");
 
       // ローカルのrecordings stateを更新
       setRecordings((prevRecordings) =>
@@ -548,18 +631,18 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
       );
 
       setEditingTranscriptionId(null);
-      setEditingTranscriptionText('');
-      console.log('ローカルstate更新完了');
+      setEditingTranscriptionText("");
+      console.log("ローカルstate更新完了");
 
       // NOTE: onUpdateは呼び出さない
       // データベースへの保存は成功しているが、すぐに再取得すると
       // タイミングの問題で古いデータが取得される可能性があるため、
       // ローカルstateの更新のみで対応する
 
-      console.log('handleSaveTranscription 完了');
+      console.log("handleSaveTranscription 完了");
     } catch (err) {
-      console.error('保存エラー:', err);
-      const errorMessage = err instanceof Error ? err.message : '不明なエラー';
+      console.error("保存エラー:", err);
+      const errorMessage = err instanceof Error ? err.message : "不明なエラー";
       alert(`文字起こしの保存に失敗しました: ${errorMessage}`);
     } finally {
       setSavingTranscriptionId(null);
@@ -574,8 +657,8 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
       const recordingsData = await getPlaylistRecordings(playlistId);
       setRecordings(recordingsData);
     } catch (err) {
-      console.error('再読み込みエラー:', err);
-      alert('録音一覧の再読み込みに失敗しました');
+      console.error("再読み込みエラー:", err);
+      alert("録音一覧の再読み込みに失敗しました");
     } finally {
       setIsRefreshing(false);
     }
@@ -605,15 +688,15 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
     try {
       // バックエンドに順番を保存
       const recordingIds = newRecordings.map((r) => r.id);
-      console.log('並び替え保存中:', { playlistId, recordingIds });
+      console.log("並び替え保存中:", { playlistId, recordingIds });
       await reorderPlaylistRecordings(playlistId, recordingIds);
-      console.log('並び替え保存成功');
+      console.log("並び替え保存成功");
 
       // 成功時はUIが既に更新されているので、onUpdateは呼ばない
       // これによりページリロードを防ぐ
     } catch (err) {
-      console.error('並び替えエラー:', err);
-      alert('並び替えに失敗しました');
+      console.error("並び替えエラー:", err);
+      alert("並び替えに失敗しました");
       // エラー時は元の順番にロールバック
       setRecordings(originalRecordings);
       // データとUIの整合性を保つためonUpdateを呼ぶ
@@ -650,18 +733,14 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
               </Button>
             )}
             {onUploadRequest && (
-              <Button
-                onClick={onUploadRequest}
-                variant="default"
-                size="sm"
-              >
+              <Button onClick={onUploadRequest} variant="default" size="sm">
                 <Upload className="mr-2 h-4 w-4" />
                 音声をアップロード
               </Button>
             )}
             {showDeviceList && (
               <Select
-                value={currentAudioDevice || 'default'}
+                value={currentAudioDevice || "default"}
                 onValueChange={handleDeviceSelect}
               >
                 <SelectTrigger className="w-[200px]">
@@ -671,7 +750,8 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
                 <SelectContent>
                   {audioDevices.map((device) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `デバイス ${device.deviceId.slice(0, 8)}`}
+                      {device.label ||
+                        `デバイス ${device.deviceId.slice(0, 8)}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -714,7 +794,9 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
                         isDragEnabled={isDragEnabled}
                         editingTranscriptionId={editingTranscriptionId}
                         editingTranscriptionText={editingTranscriptionText}
-                        setEditingTranscriptionText={setEditingTranscriptionText}
+                        setEditingTranscriptionText={
+                          setEditingTranscriptionText
+                        }
                         savingTranscriptionId={savingTranscriptionId}
                         transcribingId={transcribingId}
                         playingId={playingId}
@@ -746,7 +828,10 @@ export default function RecordingList({ recordings: propRecordings, onUpdate, pl
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive hover:bg-destructive/90"
+            >
               削除
             </AlertDialogAction>
           </AlertDialogFooter>

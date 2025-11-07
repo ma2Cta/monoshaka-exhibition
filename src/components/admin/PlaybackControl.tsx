@@ -1,16 +1,22 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { usePlayer } from '@/hooks/usePlayer';
-import { getPlaylistRecordings } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Play, Pause, Speaker } from 'lucide-react';
-import { CompactVisualizer } from '@/components/player/CompactVisualizer';
+import { useState, useEffect } from "react";
+import { usePlayer } from "@/hooks/usePlayer";
+import { getPlaylistRecordings } from "@/lib/supabase";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Play, Pause, Speaker } from "lucide-react";
+import { CompactVisualizer } from "@/components/player/CompactVisualizer";
 
 interface PlaybackControlProps {
   playlistId: string;
@@ -21,11 +27,15 @@ interface PlaybackControlProps {
  * プレイリストの自動ループ再生をコントロールするコンポーネント
  * デバイス選択、再生/停止、進捗表示、ビジュアライザーを含む
  */
-export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackControlProps) {
+export function PlaybackControl({
+  playlistId,
+  recordingCount = 0,
+}: PlaybackControlProps) {
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
-  const [selectedDeviceName, setSelectedDeviceName] = useState<string>('デフォルト');
-  const [actualRecordingCount, setActualRecordingCount] = useState<number>(recordingCount);
+  const [, setSelectedDeviceName] = useState<string>("デフォルト");
+  const [actualRecordingCount, setActualRecordingCount] =
+    useState<number>(recordingCount);
   const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   const {
@@ -39,7 +49,7 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
     selectAudioOutput,
     setOutputDevice,
     currentAudioDevice,
-    audioOutputSupported
+    audioOutputSupported,
   } = usePlayer({ playlistId });
 
   // プレイリストの録音数を取得
@@ -49,7 +59,7 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
         const recordings = await getPlaylistRecordings(playlistId);
         setActualRecordingCount(recordings.length);
       } catch (error) {
-        console.error('録音数の取得に失敗:', error);
+        console.error("録音数の取得に失敗:", error);
       }
     }
     fetchRecordingCount();
@@ -62,7 +72,7 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
 
   // 初回マウント時に保存されたデバイス名を復元
   useEffect(() => {
-    const savedDeviceName = localStorage.getItem('audioOutputDeviceName');
+    const savedDeviceName = localStorage.getItem("audioOutputDeviceName");
     if (savedDeviceName) {
       setSelectedDeviceName(savedDeviceName);
     }
@@ -74,7 +84,12 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
       setHasInitializedDevices(true);
       selectAudioOutput();
     }
-  }, [audioOutputSupported, showDeviceList, hasInitializedDevices, selectAudioOutput]);
+  }, [
+    audioOutputSupported,
+    showDeviceList,
+    hasInitializedDevices,
+    selectAudioOutput,
+  ]);
 
   // カスタムイベントでデバイス一覧を受け取る
   useEffect(() => {
@@ -89,27 +104,29 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
       setSelectedDeviceName(customEvent.detail);
     };
 
-    window.addEventListener('audioOutputDeviceListAvailable', handleDeviceList);
-    window.addEventListener('audioOutputDeviceSelected', handleDeviceSelected);
+    window.addEventListener("audioOutputDeviceListAvailable", handleDeviceList);
+    window.addEventListener("audioOutputDeviceSelected", handleDeviceSelected);
 
     return () => {
-      window.removeEventListener('audioOutputDeviceListAvailable', handleDeviceList);
-      window.removeEventListener('audioOutputDeviceSelected', handleDeviceSelected);
+      window.removeEventListener(
+        "audioOutputDeviceListAvailable",
+        handleDeviceList
+      );
+      window.removeEventListener(
+        "audioOutputDeviceSelected",
+        handleDeviceSelected
+      );
     };
   }, []);
-
-  async function handleSelectAudioOutput() {
-    await selectAudioOutput();
-  }
 
   async function handleDeviceSelect(deviceId: string) {
     await setOutputDevice(deviceId);
     // 選択されたデバイス名を保存
-    const device = audioDevices.find(d => d.deviceId === deviceId);
+    const device = audioDevices.find((d) => d.deviceId === deviceId);
     if (device) {
-      const deviceName = device.label || 'デフォルト';
+      const deviceName = device.label || "デフォルト";
       setSelectedDeviceName(deviceName);
-      localStorage.setItem('audioOutputDeviceName', deviceName);
+      localStorage.setItem("audioOutputDeviceName", deviceName);
     }
   }
 
@@ -127,22 +144,22 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
       <CardHeader>
         <CardTitle className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <Speaker className="h-5 w-5" />
             <span>ループ再生</span>
-            {isPlaying && (
-              <Badge variant="default">再生中</Badge>
-            )}
-            {!isPlaying && actualRecordingCount > 0 && !needsUserInteraction && (
-              <Badge variant="secondary">一時停止中</Badge>
-            )}
+            {isPlaying && <Badge variant="default">再生中</Badge>}
+            {!isPlaying &&
+              actualRecordingCount > 0 &&
+              !needsUserInteraction && (
+                <Badge variant="secondary">一時停止中</Badge>
+              )}
           </div>
           {/* デバイス選択 */}
           {showDeviceList ? (
             <Select
-              value={currentAudioDevice || 'default'}
+              value={currentAudioDevice || "default"}
               onValueChange={handleDeviceSelect}
             >
               <SelectTrigger className="w-[200px]">
+                <Speaker className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="デバイスを選択" />
               </SelectTrigger>
               <SelectContent>
@@ -180,7 +197,7 @@ export function PlaybackControl({ playlistId, recordingCount = 0 }: PlaybackCont
             ) : (
               <>
                 <Play className="h-5 w-5 mr-2" />
-                {needsUserInteraction ? '再生開始' : '再開'}
+                {needsUserInteraction ? "再生開始" : "再開"}
               </>
             )}
           </Button>

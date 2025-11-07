@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useRouter, usePathname } from 'next/navigation';
-import { createClient } from '@/lib/supabase-client';
-import { Button } from '@/components/ui/button';
-import { LogOut } from 'lucide-react';
-import Link from 'next/link';
+import { useRouter, usePathname } from "next/navigation";
+import { createClient } from "@/lib/supabase-client";
+import { Button } from "@/components/ui/button";
+import { LogOut } from "lucide-react";
+import Link from "next/link";
 
 interface HeaderProps {
   showNav?: boolean;
@@ -17,7 +17,7 @@ export default function Header({ showNav = true }: HeaderProps) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push("/login");
     router.refresh();
   };
 
@@ -26,7 +26,10 @@ export default function Header({ showNav = true }: HeaderProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <Link
+              href="/"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
               <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                 monoshaka
               </span>
@@ -37,7 +40,9 @@ export default function Header({ showNav = true }: HeaderProps) {
                 <Link
                   href="/record"
                   className={`text-sm hover:text-foreground transition-colors ${
-                    pathname === '/record' ? 'font-bold text-foreground' : 'text-muted-foreground'
+                    pathname === "/record"
+                      ? "font-bold text-foreground"
+                      : "text-muted-foreground"
                   }`}
                 >
                   録音
@@ -45,7 +50,9 @@ export default function Header({ showNav = true }: HeaderProps) {
                 <Link
                   href="/record/feedback"
                   className={`text-sm hover:text-foreground transition-colors ${
-                    pathname === '/record/feedback' ? 'font-bold text-foreground' : 'text-muted-foreground'
+                    pathname === "/record/feedback"
+                      ? "font-bold text-foreground"
+                      : "text-muted-foreground"
                   }`}
                 >
                   録音（FB付）
@@ -53,7 +60,9 @@ export default function Header({ showNav = true }: HeaderProps) {
                 <Link
                   href="/play"
                   className={`text-sm hover:text-foreground transition-colors ${
-                    pathname === '/play' ? 'font-bold text-foreground' : 'text-muted-foreground'
+                    pathname === "/play"
+                      ? "font-bold text-foreground"
+                      : "text-muted-foreground"
                   }`}
                 >
                   再生
@@ -61,10 +70,23 @@ export default function Header({ showNav = true }: HeaderProps) {
                 <Link
                   href="/admin"
                   className={`text-sm hover:text-foreground transition-colors ${
-                    pathname?.startsWith('/admin') ? 'font-bold text-foreground' : 'text-muted-foreground'
+                    pathname?.startsWith("/admin") &&
+                    !pathname?.startsWith("/admin/v2")
+                      ? "font-bold text-foreground"
+                      : "text-muted-foreground"
                   }`}
                 >
                   管理
+                </Link>
+                <Link
+                  href="/admin/v2"
+                  className={`text-sm hover:text-foreground transition-colors ${
+                    pathname?.startsWith("/admin/v2")
+                      ? "font-bold text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  新管理（プレイリストから再生可能）
                 </Link>
               </nav>
             )}
