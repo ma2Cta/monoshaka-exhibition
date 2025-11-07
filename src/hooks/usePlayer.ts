@@ -622,7 +622,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     setCurrentIndex(0);
     setIsPlaying(false);
     setNeedsUserInteraction(true);
-    setRecordings([]);
+    // recordingsは削除しない（再生開始できるようにする）
+    // setRecordings([]);
   }, []);
 
   // ユーザーインタラクション後に再生を開始

@@ -18,7 +18,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Trash2, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
 
-export default function PlaylistManager() {
+interface PlaylistManagerProps {
+  basePath?: string;
+}
+
+export default function PlaylistManager({ basePath = '/admin' }: PlaylistManagerProps = {}) {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -213,7 +217,7 @@ export default function PlaylistManager() {
                       </TableCell>
                       <TableCell>
                         <Link
-                          href={`/admin/playlists/${playlist.id}`}
+                          href={`${basePath}/playlists/${playlist.id}`}
                           className="text-primary hover:underline font-medium inline-flex items-center gap-1 cursor-pointer"
                         >
                           {playlist.name}
