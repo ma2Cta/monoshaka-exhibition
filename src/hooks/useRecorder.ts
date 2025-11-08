@@ -22,8 +22,6 @@ interface UseRecorderReturn {
   setSelectedDevice: (deviceId: string) => void;
 }
 
-const STORAGE_KEY = 'selectedAudioDeviceId';
-
 export const useRecorder = (): UseRecorderReturn => {
   const [state, setState] = useState<RecorderState>('idle');
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -48,7 +46,7 @@ export const useRecorder = (): UseRecorderReturn => {
       // デバイスリストを取得
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioInputs = devices
-        .filter(device => device.kind === 'audioinput')
+        .filter(device => device.kind === 'audioinput' && device.deviceId !== 'default' && device.deviceId !== '')
         .map(device => ({
           deviceId: device.deviceId,
           label: device.label || `マイク ${device.deviceId.slice(0, 8)}`,
@@ -59,19 +57,11 @@ export const useRecorder = (): UseRecorderReturn => {
       // 一時的なストリームを停止
       tempStream.getTracks().forEach(track => track.stop());
 
-      // localStorageから選択されたデバイスIDを取得
-      const savedDeviceId = localStorage.getItem(STORAGE_KEY);
-
-      // 保存されたデバイスIDが有効かチェック
-      const savedDeviceExists = savedDeviceId && audioInputs.some(d => d.deviceId === savedDeviceId);
-
-      // 選択されたデバイスが存在しない場合、最初のデバイスを選択
-      if (audioInputs.length > 0 && !savedDeviceExists) {
+      // 常にリストの一番上のデバイスを選択
+      if (audioInputs.length > 0) {
         const firstDeviceId = audioInputs[0].deviceId;
         setSelectedDeviceId(firstDeviceId);
-        localStorage.setItem(STORAGE_KEY, firstDeviceId);
-      } else if (savedDeviceExists) {
-        setSelectedDeviceId(savedDeviceId);
+        console.log('マイクデバイスを自動選択:', audioInputs[0].label);
       }
     } catch {
       setError('マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');
@@ -81,7 +71,6 @@ export const useRecorder = (): UseRecorderReturn => {
   // デバイスを選択
   const setSelectedDevice = useCallback((deviceId: string) => {
     setSelectedDeviceId(deviceId);
-    localStorage.setItem(STORAGE_KEY, deviceId);
   }, []);
 
   // 初回マウント時にデバイスリストを取得

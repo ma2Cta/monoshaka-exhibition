@@ -16,13 +16,19 @@ function getSupabaseClient(): SupabaseClient<Database> {
  * @param duration 録音の長さ（秒）
  * @param transcription 文字起こしテキスト（オプショナル）
  * @param playlistId プレイリストID（指定した場合、そのプレイリスト専用のパスに保存）
+ * @param volumeMetadata 音量メタデータ（オプショナル）
  * @returns アップロードされた録音のレコード
  */
 export async function uploadRecording(
   blob: Blob,
   duration: number,
   transcription?: string,
-  playlistId?: string
+  playlistId?: string,
+  volumeMetadata?: {
+    lufs: number;
+    peak: number;
+    rms: number;
+  }
 ) {
   const supabase = getSupabaseClient();
 
@@ -52,6 +58,9 @@ export async function uploadRecording(
     file_path: uploadData.path,
     duration,
     transcription: transcription || null,
+    lufs: volumeMetadata?.lufs ?? null,
+    peak_level: volumeMetadata?.peak ?? null,
+    rms_level: volumeMetadata?.rms ?? null,
   };
 
   const result = await ((supabase as unknown as SupabaseClient<Database>)
@@ -310,6 +319,9 @@ export async function getPlaylistRecordings(
         file_path,
         duration,
         transcription,
+        lufs,
+        peak_level,
+        rms_level,
         created_at
       )
     `)
@@ -338,6 +350,9 @@ export async function getPlaylistRecordings(
         file_path: recording.file_path,
         duration: recording.duration,
         transcription: recording.transcription,
+        lufs: recording.lufs,
+        peak_level: recording.peak_level,
+        rms_level: recording.rms_level,
         created_at: recording.created_at,
         order_index: item.order_index,
         playlist_recording_id: item.id,

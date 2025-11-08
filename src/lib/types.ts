@@ -5,6 +5,9 @@ export interface Recording {
   file_path: string;
   duration: number | null;
   transcription?: string | null;
+  lufs?: number | null;
+  peak_level?: number | null;
+  rms_level?: number | null;
   created_at: string;
 }
 
@@ -40,12 +43,18 @@ export type Database = {
           file_path: string;
           duration: number | null;
           transcription?: string | null;
+          lufs?: number | null;
+          peak_level?: number | null;
+          rms_level?: number | null;
           created_at?: string;
         };
         Update: {
           file_path?: string;
           duration?: number | null;
           transcription?: string | null;
+          lufs?: number | null;
+          peak_level?: number | null;
+          rms_level?: number | null;
         };
         Relationships: [];
       };

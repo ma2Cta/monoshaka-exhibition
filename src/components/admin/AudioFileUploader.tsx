@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Upload, Loader2, FileAudio, X, CheckCircle2, AlertCircle, Play, Pause, GripVertical } from 'lucide-react';
 import { uploadRecording, addRecordingToPlaylist } from '@/lib/supabase';
 import type { Recording } from '@/lib/types';
+import { analyzeAudioVolume, type VolumeMetadata } from '@/lib/audio-analysis';
 
 interface AudioFileUploaderProps {
   playlistId: string;
@@ -23,6 +24,7 @@ interface FileItem {
   id: string;
   status: FileStatus;
   duration: number | null;
+  volumeMetadata?: VolumeMetadata;
   error?: string;
   audioUrl?: string;
 }
@@ -68,17 +70,23 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
       }
 
       try {
-        const duration = await getAudioDuration(fileItem.file);
+        // durationと音量メタデータを並列で取得
+        const [duration, volumeMetadata] = await Promise.all([
+          getAudioDuration(fileItem.file),
+          analyzeAudioVolume(fileItem.file),
+        ]);
         setFiles((prev) =>
           prev.map((f) =>
-            f.id === fileItem.id ? { ...f, status: 'ready' as FileStatus, duration } : f
+            f.id === fileItem.id
+              ? { ...f, status: 'ready' as FileStatus, duration, volumeMetadata }
+              : f
           )
         );
       } catch {
         setFiles((prev) =>
           prev.map((f) =>
             f.id === fileItem.id
-              ? { ...f, status: 'error' as FileStatus, error: '音声ファイルの読み込みに失敗しました' }
+              ? { ...f, status: 'error' as FileStatus, error: '音声ファイルの解析に失敗しました' }
               : f
           )
         );
@@ -151,7 +159,8 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
           fileItem.file,
           fileItem.duration!,
           undefined,
-          playlistId
+          playlistId,
+          fileItem.volumeMetadata
         );
 
         // 2. プレイリストに追加
@@ -384,6 +393,7 @@ export default function AudioFileUploader({ playlistId, onUploadComplete }: Audi
                   <p className="text-xs text-muted-foreground">
                     {formatFileSize(fileItem.file.size)}
                     {fileItem.duration !== null && ` • ${formatDuration(fileItem.duration)}`}
+                    {fileItem.volumeMetadata && ` • ${fileItem.volumeMetadata.lufs.toFixed(1)} LUFS`}
                     {' • '}
                     {getStatusText(fileItem)}
                   </p>

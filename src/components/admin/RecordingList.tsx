@@ -10,7 +10,6 @@ interface HTMLAudioElementWithSinkId extends HTMLAudioElement {
 import {
   getRecordingUrl,
   deleteRecording,
-  updateRecordingTranscription,
   reorderPlaylistRecordings,
   getPlaylistRecordings,
 } from "@/lib/supabase";
@@ -41,7 +40,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -54,14 +52,14 @@ import {
   Trash2,
   Loader2,
   FileText,
-  Edit,
-  Save,
-  X,
   GripVertical,
   RefreshCcw,
   Upload,
   Speaker,
+  Volume2,
 } from "lucide-react";
+import VolumeAnalyzerModal from "./VolumeAnalyzerModal";
+import TranscriptionModal from "./TranscriptionModal";
 import {
   DndContext,
   closestCenter,
@@ -85,6 +83,9 @@ interface RecordingListProps {
   onUpdate?: () => void | Promise<void>;
   playlistId?: string; // プレイリストID（指定時のみドラッグ&ドロップ有効）
   onUploadRequest?: () => void; // アップロードモーダルを開くコールバック
+  onRecordingDeleted?: (recordingId: string) => void; // 削除完了時のコールバック
+  onRecordingReordered?: (newRecordings: Recording[]) => void; // 並び替え完了時のコールバック
+  onAnalysisComplete?: () => void | Promise<void>; // 音量最適化完了時のコールバック
 }
 
 // ヘルパー関数
@@ -110,21 +111,8 @@ function formatDuration(seconds: number | null): string {
 interface SortableRowProps {
   recording: Recording;
   isDragEnabled: boolean;
-  editingTranscriptionId: string | null;
-  editingTranscriptionText: string;
-  setEditingTranscriptionText: (text: string) => void;
-  savingTranscriptionId: string | null;
-  transcribingId: string | null;
   playingId: string | null;
   deletingId: string | null;
-  handleSaveTranscription: (id: string) => void;
-  handleTranscribe: (
-    id: string,
-    filePath: string,
-    isRegenerate?: boolean
-  ) => void;
-  handleCancelEdit: () => void;
-  handleEditTranscription: (id: string, text: string) => void;
   handlePlay: (id: string, filePath: string) => void;
   openDeleteDialog: (id: string, filePath: string) => void;
 }
@@ -133,17 +121,8 @@ interface SortableRowProps {
 const SortableRow = React.memo(function SortableRow({
   recording,
   isDragEnabled,
-  editingTranscriptionId,
-  editingTranscriptionText,
-  setEditingTranscriptionText,
-  savingTranscriptionId,
-  transcribingId,
   playingId,
   deletingId,
-  handleSaveTranscription,
-  handleTranscribe,
-  handleCancelEdit,
-  handleEditTranscription,
   handlePlay,
   openDeleteDialog,
 }: SortableRowProps) {
@@ -183,130 +162,23 @@ const SortableRow = React.memo(function SortableRow({
         {formatDuration(recording.duration)}
       </TableCell>
       <TableCell>
-        {editingTranscriptionId === recording.id ? (
-          <div className="max-w-md space-y-2">
-            <Textarea
-              value={editingTranscriptionText}
-              onChange={(e) => setEditingTranscriptionText(e.target.value)}
-              className="min-h-[100px]"
-              placeholder="文字起こしを入力..."
-            />
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                type="button"
-                onClick={() => handleSaveTranscription(recording.id)}
-                disabled={
-                  savingTranscriptionId === recording.id ||
-                  transcribingId === recording.id
-                }
-                size="sm"
-                variant="default"
-              >
-                {savingTranscriptionId === recording.id ? (
-                  <>
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    保存中...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-1 h-3 w-3" />
-                    保存
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                onClick={() =>
-                  handleTranscribe(recording.id, recording.file_path, true)
-                }
-                disabled={
-                  transcribingId === recording.id ||
-                  savingTranscriptionId === recording.id
-                }
-                size="sm"
-                variant="secondary"
-              >
-                {transcribingId === recording.id ? (
-                  <>
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    生成中...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="mr-1 h-3 w-3" />
-                    再生成
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleCancelEdit}
-                disabled={
-                  transcribingId === recording.id ||
-                  savingTranscriptionId === recording.id
-                }
-                size="sm"
-                variant="outline"
-              >
-                <X className="mr-1 h-3 w-3" />
-                キャンセル
-              </Button>
-            </div>
-          </div>
-        ) : recording.transcription ? (
-          <div className="flex items-start gap-2">
-            <div className="flex-1 max-w-md">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="text-sm line-clamp-2 cursor-help">
-                      {recording.transcription}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-md whitespace-pre-wrap">
-                    <p className="text-sm">{recording.transcription}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Button
-              onClick={() =>
-                handleEditTranscription(
-                  recording.id,
-                  recording.transcription || ""
-                )
-              }
-              size="sm"
-              variant="ghost"
-              className="shrink-0"
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
+        {recording.transcription ? (
+          <div className="max-w-md">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-sm line-clamp-2 cursor-help">
+                    {recording.transcription}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-md whitespace-pre-wrap">
+                  <p className="text-sm">{recording.transcription}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground italic">なし</span>
-            <Button
-              onClick={() =>
-                handleTranscribe(recording.id, recording.file_path)
-              }
-              disabled={transcribingId === recording.id}
-              size="sm"
-              variant="outline"
-            >
-              {transcribingId === recording.id ? (
-                <>
-                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  生成中...
-                </>
-              ) : (
-                <>
-                  <FileText className="mr-1 h-3 w-3" />
-                  生成
-                </>
-              )}
-            </Button>
-          </div>
+          <span className="text-muted-foreground italic text-sm">なし</span>
         )}
       </TableCell>
       <TableCell className="text-right space-x-2">
@@ -355,6 +227,9 @@ export default function RecordingList({
   onUpdate,
   playlistId,
   onUploadRequest,
+  onRecordingDeleted,
+  onRecordingReordered,
+  onAnalysisComplete,
 }: RecordingListProps = {}) {
   const [recordings, setRecordings] = useState<Recording[]>(
     propRecordings || []
@@ -369,21 +244,16 @@ export default function RecordingList({
     id: string;
     filePath: string;
   } | null>(null);
-  const [transcribingId, setTranscribingId] = useState<string | null>(null);
-  const [editingTranscriptionId, setEditingTranscriptionId] = useState<
-    string | null
-  >(null);
-  const [editingTranscriptionText, setEditingTranscriptionText] = useState("");
-  const [savingTranscriptionId, setSavingTranscriptionId] = useState<
-    string | null
-  >(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [volumeAnalyzerOpen, setVolumeAnalyzerOpen] = useState(false);
+  const [transcriptionModalOpen, setTranscriptionModalOpen] = useState(false);
 
   // 音声デバイス選択用のstate
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
-  const [currentAudioDevice, setCurrentAudioDevice] =
-    useState<string>("default");
+  const [currentAudioDevice, setCurrentAudioDevice] = useState<string | null>(
+    null
+  );
   const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   // ドラッグ&ドロップのセンサー設定
@@ -402,7 +272,7 @@ export default function RecordingList({
     setRecordings(propRecordings || []);
   }, [propRecordings]);
 
-  // 初期化時にデバイス一覧を取得
+  // 初期化時にデバイス一覧を取得（既定のデバイスを除外）
   useEffect(() => {
     async function initAudioDevices() {
       if (
@@ -413,8 +283,12 @@ export default function RecordingList({
         try {
           setHasInitializedDevices(true);
           const devices = await navigator.mediaDevices.enumerateDevices();
+          // 既定のデバイス（default）を除外し、実際のデバイスのみを取得
           const audioOutputs = devices.filter(
-            (device) => device.kind === "audiooutput"
+            (device) =>
+              device.kind === "audiooutput" &&
+              device.deviceId !== "default" &&
+              device.deviceId !== ""
           );
           if (audioOutputs.length > 0) {
             setAudioDevices(audioOutputs);
@@ -424,7 +298,11 @@ export default function RecordingList({
             const savedDeviceId = localStorage.getItem(
               "recordingListAudioDeviceId"
             );
-            if (
+            // 既定のデバイスIDだった場合はクリア（状態不整合を防ぐため）
+            if (savedDeviceId === "default" || savedDeviceId === "") {
+              console.log("既定のデバイスIDが保存されていたためクリアします");
+              localStorage.removeItem("recordingListAudioDeviceId");
+            } else if (
               savedDeviceId &&
               audioOutputs.some((d) => d.deviceId === savedDeviceId)
             ) {
@@ -477,9 +355,9 @@ export default function RecordingList({
         )
       );
 
-      // NOTE: onUpdateは呼び出さない
-      // データベースからの削除は成功しているが、ページ全体を再読み込みすると
-      // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
+      // 親コンポーネントに削除を通知（ページ全体のリフレッシュを避ける）
+      // これによりループ再生側でも削除を検出できる
+      onRecordingDeleted?.(selectedRecording.id);
     } catch (err) {
       console.error("削除エラー:", err);
       alert("削除に失敗しました");
@@ -507,12 +385,8 @@ export default function RecordingList({
     const url = getRecordingUrl(filePath);
     const audio = new Audio(url);
 
-    // 音声出力デバイスを設定
-    if (
-      currentAudioDevice &&
-      currentAudioDevice !== "default" &&
-      "setSinkId" in audio
-    ) {
+    // 音声出力デバイスを設定（既定デバイスは除外）
+    if (currentAudioDevice && "setSinkId" in audio) {
       try {
         await (audio as HTMLAudioElementWithSinkId).setSinkId(
           currentAudioDevice
@@ -539,6 +413,12 @@ export default function RecordingList({
   }
 
   async function handleDeviceSelect(deviceId: string) {
+    // 既定のデバイスIDは設定しない（状態不整合を防ぐため）
+    if (deviceId === "default" || deviceId === "") {
+      console.warn("既定のデバイスIDは設定できません");
+      return;
+    }
+
     setCurrentAudioDevice(deviceId);
     localStorage.setItem("recordingListAudioDeviceId", deviceId);
 
@@ -549,103 +429,6 @@ export default function RecordingList({
       } catch (err) {
         console.error("デバイス変更エラー:", err);
       }
-    }
-  }
-
-  async function handleTranscribe(
-    id: string,
-    filePath: string,
-    isRegenerate: boolean = false
-  ) {
-    try {
-      setTranscribingId(id);
-
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          recordingId: id,
-          filePath,
-          skipSave: isRegenerate, // 編集モード時の再生成はDB保存をスキップ
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "文字起こしに失敗しました");
-      }
-
-      if (isRegenerate && editingTranscriptionId === id) {
-        // 編集モード時の再生成: テキストエリアだけを更新（DBもローカルstateも更新しない）
-        setEditingTranscriptionText(data.transcription);
-      } else {
-        // 初回生成: ローカルのrecordings stateを更新（DBには既に保存済み）
-        setRecordings((prevRecordings) =>
-          prevRecordings.map((recording) =>
-            recording.id === id
-              ? { ...recording, transcription: data.transcription }
-              : recording
-          )
-        );
-      }
-    } catch (err) {
-      console.error("文字起こしエラー:", err);
-      const errorMessage = err instanceof Error ? err.message : "不明なエラー";
-      alert(`文字起こしに失敗しました: ${errorMessage}`);
-    } finally {
-      setTranscribingId(null);
-    }
-  }
-
-  function handleEditTranscription(id: string, currentText: string) {
-    setEditingTranscriptionId(id);
-    setEditingTranscriptionText(currentText);
-  }
-
-  function handleCancelEdit() {
-    setEditingTranscriptionId(null);
-    setEditingTranscriptionText("");
-  }
-
-  async function handleSaveTranscription(id: string) {
-    console.log("handleSaveTranscription 開始:", {
-      id,
-      text: editingTranscriptionText,
-    });
-    try {
-      setSavingTranscriptionId(id);
-      console.log("updateRecordingTranscription 呼び出し前");
-      await updateRecordingTranscription(id, editingTranscriptionText);
-      console.log("updateRecordingTranscription 成功");
-
-      // ローカルのrecordings stateを更新
-      setRecordings((prevRecordings) =>
-        prevRecordings.map((recording) =>
-          recording.id === id
-            ? { ...recording, transcription: editingTranscriptionText }
-            : recording
-        )
-      );
-
-      setEditingTranscriptionId(null);
-      setEditingTranscriptionText("");
-      console.log("ローカルstate更新完了");
-
-      // NOTE: onUpdateは呼び出さない
-      // データベースへの保存は成功しているが、すぐに再取得すると
-      // タイミングの問題で古いデータが取得される可能性があるため、
-      // ローカルstateの更新のみで対応する
-
-      console.log("handleSaveTranscription 完了");
-    } catch (err) {
-      console.error("保存エラー:", err);
-      const errorMessage = err instanceof Error ? err.message : "不明なエラー";
-      alert(`文字起こしの保存に失敗しました: ${errorMessage}`);
-    } finally {
-      setSavingTranscriptionId(null);
     }
   }
 
@@ -662,6 +445,13 @@ export default function RecordingList({
     } finally {
       setIsRefreshing(false);
     }
+  }
+
+  async function handleVolumeAnalysisComplete() {
+    // 音量最適化が完了したら、親コンポーネントに通知
+    // これによりループ再生側でもLUFS値の更新を検出できる
+    await handleRefresh();
+    onAnalysisComplete?.();
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -692,8 +482,9 @@ export default function RecordingList({
       await reorderPlaylistRecordings(playlistId, recordingIds);
       console.log("並び替え保存成功");
 
-      // 成功時はUIが既に更新されているので、onUpdateは呼ばない
-      // これによりページリロードを防ぐ
+      // 親コンポーネントに並び替えを通知（ページ全体のリフレッシュを避ける）
+      // これによりループ再生側でも並び替えを検出できる
+      onRecordingReordered?.(newRecordings);
     } catch (err) {
       console.error("並び替えエラー:", err);
       alert("並び替えに失敗しました");
@@ -732,15 +523,41 @@ export default function RecordingList({
                 )}
               </Button>
             )}
+            <Button
+              onClick={() => setVolumeAnalyzerOpen(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Volume2 className="mr-2 h-4 w-4" />
+              音量最適化
+              {recordings.filter((r) => r.lufs == null).length > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground rounded-full">
+                  {recordings.filter((r) => r.lufs == null).length}
+                </span>
+              )}
+            </Button>
+            <Button
+              onClick={() => setTranscriptionModalOpen(true)}
+              variant="outline"
+              size="sm"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              文字起こし
+              {recordings.filter((r) => !r.transcription || r.transcription.trim() === '').length > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground rounded-full">
+                  {recordings.filter((r) => !r.transcription || r.transcription.trim() === '').length}
+                </span>
+              )}
+            </Button>
             {onUploadRequest && (
               <Button onClick={onUploadRequest} variant="default" size="sm">
                 <Upload className="mr-2 h-4 w-4" />
                 音声をアップロード
               </Button>
             )}
-            {showDeviceList && (
+            {showDeviceList && audioDevices.length > 0 && (
               <Select
-                value={currentAudioDevice || "default"}
+                value={currentAudioDevice || undefined}
                 onValueChange={handleDeviceSelect}
               >
                 <SelectTrigger className="w-[200px]">
@@ -792,19 +609,8 @@ export default function RecordingList({
                         key={recording.id}
                         recording={recording}
                         isDragEnabled={isDragEnabled}
-                        editingTranscriptionId={editingTranscriptionId}
-                        editingTranscriptionText={editingTranscriptionText}
-                        setEditingTranscriptionText={
-                          setEditingTranscriptionText
-                        }
-                        savingTranscriptionId={savingTranscriptionId}
-                        transcribingId={transcribingId}
                         playingId={playingId}
                         deletingId={deletingId}
-                        handleSaveTranscription={handleSaveTranscription}
-                        handleTranscribe={handleTranscribe}
-                        handleCancelEdit={handleCancelEdit}
-                        handleEditTranscription={handleEditTranscription}
                         handlePlay={handlePlay}
                         openDeleteDialog={openDeleteDialog}
                       />
@@ -837,6 +643,22 @@ export default function RecordingList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 音量最適化モーダル */}
+      <VolumeAnalyzerModal
+        recordings={recordings}
+        open={volumeAnalyzerOpen}
+        onOpenChange={setVolumeAnalyzerOpen}
+        onAnalysisComplete={handleVolumeAnalysisComplete}
+      />
+
+      {/* 文字起こしモーダル */}
+      <TranscriptionModal
+        recordings={recordings}
+        open={transcriptionModalOpen}
+        onOpenChange={setTranscriptionModalOpen}
+        onTranscriptionComplete={handleRefresh}
+      />
     </Card>
   );
 }

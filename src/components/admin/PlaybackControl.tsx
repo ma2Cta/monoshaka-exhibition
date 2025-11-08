@@ -17,10 +17,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Play, Pause, Speaker } from "lucide-react";
 import { CompactVisualizer } from "@/components/player/CompactVisualizer";
+import type { Recording } from "@/lib/types";
 
 interface PlaybackControlProps {
   playlistId: string;
   recordingCount?: number;
+  recordings?: Recording[];
 }
 
 /**
@@ -30,6 +32,7 @@ interface PlaybackControlProps {
 export function PlaybackControl({
   playlistId,
   recordingCount = 0,
+  recordings,
 }: PlaybackControlProps) {
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
@@ -45,38 +48,47 @@ export function PlaybackControl({
     totalCount,
     startPlayback,
     needsUserInteraction,
-    resetPlayback,
+    pausePlayback,
     selectAudioOutput,
     setOutputDevice,
     currentAudioDevice,
     audioOutputSupported,
-  } = usePlayer({ playlistId });
+  } = usePlayer({ playlistId, recordings });
 
-  // プレイリストの録音数を取得
+  // 外部recordingsが渡されていない場合のみ録音数を取得
   useEffect(() => {
     async function fetchRecordingCount() {
+      // 外部recordingsがある場合は取得不要
+      if (recordings) {
+        return;
+      }
+
       try {
-        const recordings = await getPlaylistRecordings(playlistId);
-        setActualRecordingCount(recordings.length);
+        const recordingsData = await getPlaylistRecordings(playlistId);
+        setActualRecordingCount(recordingsData.length);
       } catch (error) {
         console.error("録音数の取得に失敗:", error);
       }
     }
     fetchRecordingCount();
-  }, [playlistId]);
+  }, [playlistId, recordings]);
 
-  // recordingCount propsが変更されたら更新
+  // recordingCount propsまたは外部recordingsが変更されたら更新
   useEffect(() => {
-    setActualRecordingCount(recordingCount);
-  }, [recordingCount]);
-
-  // 初回マウント時に保存されたデバイス名を復元
-  useEffect(() => {
-    const savedDeviceName = localStorage.getItem("audioOutputDeviceName");
-    if (savedDeviceName) {
-      setSelectedDeviceName(savedDeviceName);
+    if (recordings) {
+      setActualRecordingCount(recordings.length);
+    } else {
+      setActualRecordingCount(recordingCount);
     }
-  }, []);
+  }, [recordingCount, recordings]);
+
+  // デバイス状態のデバッグログ
+  useEffect(() => {
+    console.log("PlaybackControl: デバイス状態更新");
+    console.log("  - showDeviceList:", showDeviceList);
+    console.log("  - audioDevices.length:", audioDevices.length);
+    console.log("  - currentAudioDevice:", currentAudioDevice);
+  }, [showDeviceList, audioDevices, currentAudioDevice]);
 
   // 初期化時にデバイス一覧を自動取得
   useEffect(() => {
@@ -95,12 +107,17 @@ export function PlaybackControl({
   useEffect(() => {
     const handleDeviceList = (event: Event) => {
       const customEvent = event as CustomEvent<MediaDeviceInfo[]>;
+      console.log("PlaybackControl: デバイス一覧を受信:", customEvent.detail);
       setAudioDevices(customEvent.detail);
       setShowDeviceList(true);
     };
 
     const handleDeviceSelected = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
+      console.log(
+        "PlaybackControl: デバイスが選択されました:",
+        customEvent.detail
+      );
       setSelectedDeviceName(customEvent.detail);
     };
 
@@ -119,23 +136,41 @@ export function PlaybackControl({
     };
   }, []);
 
+  // デバイスリストが取得されたら、一番上のデバイスを自動選択
+  useEffect(() => {
+    if (audioDevices.length > 0 && !currentAudioDevice) {
+      const firstDevice = audioDevices[0];
+      console.log("PlaybackControl: デバイスを自動選択:", firstDevice.label);
+      handleDeviceSelect(firstDevice.deviceId);
+    }
+    // handleDeviceSelectは関数宣言で定義されているため、再レンダリングで変わらない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioDevices, currentAudioDevice]);
+
   async function handleDeviceSelect(deviceId: string) {
+    console.log("PlaybackControl: handleDeviceSelect呼び出し:", deviceId);
+    console.log("PlaybackControl: 利用可能なデバイス:", audioDevices);
+
     await setOutputDevice(deviceId);
-    // 選択されたデバイス名を保存
+
+    // 選択されたデバイス名を設定
     const device = audioDevices.find((d) => d.deviceId === deviceId);
     if (device) {
       const deviceName = device.label || "デフォルト";
+      console.log("PlaybackControl: デバイス名を設定:", deviceName);
       setSelectedDeviceName(deviceName);
-      localStorage.setItem("audioOutputDeviceName", deviceName);
+    } else {
+      console.warn("PlaybackControl: デバイスが見つかりません:", deviceId);
     }
   }
 
   function handlePlayPause() {
-    if (needsUserInteraction) {
-      startPlayback();
+    if (isPlaying) {
+      // 再生中の場合は一時停止
+      pausePlayback();
     } else {
-      // すでに再生が開始されている場合は停止（リセット）
-      resetPlayback();
+      // 停止中の場合は再生開始または再開
+      startPlayback();
     }
   }
 
@@ -153,9 +188,9 @@ export function PlaybackControl({
               )}
           </div>
           {/* デバイス選択 */}
-          {showDeviceList ? (
+          {showDeviceList && audioDevices.length > 0 ? (
             <Select
-              value={currentAudioDevice || "default"}
+              value={currentAudioDevice || undefined}
               onValueChange={handleDeviceSelect}
             >
               <SelectTrigger className="w-[200px]">
@@ -192,7 +227,7 @@ export function PlaybackControl({
             {isPlaying ? (
               <>
                 <Pause className="h-5 w-5 mr-2" />
-                停止
+                一時停止
               </>
             ) : (
               <>
