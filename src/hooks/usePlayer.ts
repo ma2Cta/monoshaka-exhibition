@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getRecordingUrl, getPlaylistRecordings } from '@/lib/supabase';
 import { Recording } from '@/lib/types';
+import { calculateGainFromLufs } from '@/lib/audio-analysis';
 
 interface UsePlayerReturn {
   recordings: Recording[];
@@ -41,6 +42,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const switchToNextTrackRef = useRef<(() => Promise<void>) | null>(null);
   const playTrackRef = useRef<((index: number) => Promise<void>) | null>(null);
 
+  // Web Audio API関連の参照
+  const audioContextRef = useRef<AudioContext | null>(null);
+  // Audio要素とノードの対応を管理するWeakMap
+  const audioToNodesMap = useRef<WeakMap<HTMLAudioElement, { source: MediaElementAudioSourceNode; gain: GainNode }>>(new WeakMap());
+
   // 事前計算された再生順序（インデックスの配列）
   // 例: [0, 1, 2] → 録音0 → 録音1 → 録音2 の順で再生
   const playbackOrderRef = useRef<number[]>([]);
@@ -53,6 +59,73 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const hasCompletedPlaybackRef = useRef<boolean>(false);
   // 選択された音声出力デバイスID
   const selectedAudioDeviceIdRef = useRef<string>('');
+
+  // AudioContextを初期化（遅延初期化）
+  const getAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+      console.log('AudioContextを作成しました');
+    }
+    return audioContextRef.current;
+  }, []);
+
+  // Audio要素をWeb Audio APIに接続し、音量ノーマライゼーションを適用
+  const connectAudioToWebAudio = useCallback(
+    (
+      audio: HTMLAudioElement,
+      recording: Recording
+    ): { source: MediaElementAudioSourceNode; gain: GainNode } | null => {
+      // LUFS値がない場合はWeb Audio APIを使用しない（通常のAudio要素のまま）
+      if (recording.lufs == null) {
+        console.log(`音量メタデータがないため、通常再生: ${recording.file_path}`);
+        return null;
+      }
+
+      const context = getAudioContext();
+
+      // 既にこのAudio要素に対してノードが作成されているか確認
+      const existingNodes = audioToNodesMap.current.get(audio);
+      if (existingNodes) {
+        // Gainだけ更新
+        const gainValue = calculateGainFromLufs(recording.lufs);
+        existingNodes.gain.gain.value = gainValue;
+        console.log(
+          `Gain更新: ${recording.file_path} - LUFS: ${recording.lufs}, Gain: ${gainValue.toFixed(2)}`
+        );
+        return existingNodes;
+      }
+
+      // MediaElementSourceNodeを作成
+      let source: MediaElementAudioSourceNode;
+      try {
+        source = context.createMediaElementSource(audio);
+      } catch (err) {
+        console.error('MediaElementSourceNode作成エラー:', err);
+        // エラーの場合はnullを返して通常再生にフォールバック
+        return null;
+      }
+
+      // GainNodeを作成
+      const gain = context.createGain();
+
+      // LUFS値から適切なGain値を計算して設定
+      const gainValue = calculateGainFromLufs(recording.lufs);
+      gain.gain.value = gainValue;
+      console.log(
+        `音量ノーマライゼーション適用: ${recording.file_path} - LUFS: ${recording.lufs}, Gain: ${gainValue.toFixed(2)}`
+      );
+
+      // ノードを接続: source → gain → destination
+      source.connect(gain);
+      gain.connect(context.destination);
+
+      // WeakMapに保存
+      audioToNodesMap.current.set(audio, { source, gain });
+
+      return { source, gain };
+    },
+    [getAudioContext]
+  );
 
   // Audio Output Devices APIのサポートを確認
   useEffect(() => {
@@ -309,6 +382,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     if (!nextAudioRef.current) {
       nextAudioRef.current = new Audio();
       nextAudioRef.current.preload = 'auto';
+      // Web Audio APIを使用する場合はCORS設定が必要
+      nextAudioRef.current.crossOrigin = 'anonymous';
 
       // プリロード用のエラーハンドラを設定
       nextAudioRef.current.onerror = (e) => {
@@ -316,6 +391,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         // プリロードエラーの場合はスキップして次のトラックを試す
       };
     }
+
+    // Web Audio APIに接続して音量ノーマライゼーションを適用（既存の場合はGainを更新）
+    connectAudioToWebAudio(nextAudioRef.current, nextRecording);
 
     // 毎回音声出力デバイスを設定（入れ替え後のAudio要素にも確実に設定）
     await setAudioSinkId(nextAudioRef.current).catch(err => {
@@ -326,7 +404,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     nextAudioRef.current.src = url;
     nextAudioRef.current.load();
     console.log(`次のトラックをプリロード: 再生位置 ${nextPosition}/${playbackOrderRef.current.length}, 実際のインデックス ${nextIndex}`);
-  }, [setAudioSinkId]);
+  }, [setAudioSinkId, connectAudioToWebAudio]);
 
   // 次のトラックに切り替えて再生
   const switchToNextTrack: () => Promise<void> = useCallback(async () => {
@@ -424,10 +502,10 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         currentAudioRef.current.onpause = null;
       }
 
-      // 参照を入れ替え
-      const temp = currentAudioRef.current;
+      // 参照を入れ替え（Audio要素のみ。ノードはWeakMapで管理されているので不要）
+      const tempAudio = currentAudioRef.current;
       currentAudioRef.current = nextAudioRef.current;
-      nextAudioRef.current = temp;
+      nextAudioRef.current = tempAudio;
 
       // 新しいcurrentAudioにイベントリスナーを設定
       if (currentAudioRef.current) {
@@ -524,11 +602,16 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // 現在のAudio要素を作成/設定
     if (!currentAudioRef.current) {
       currentAudioRef.current = new Audio();
+      // Web Audio APIを使用する場合はCORS設定が必要
+      currentAudioRef.current.crossOrigin = 'anonymous';
       // 音声出力デバイスを設定
       await setAudioSinkId(currentAudioRef.current).catch(err => {
         console.error('Audio要素のデバイス設定エラー:', err);
       });
     }
+
+    // Web Audio APIに接続して音量ノーマライゼーションを適用（既存の場合はGainを更新）
+    connectAudioToWebAudio(currentAudioRef.current, recording);
 
     // イベントリスナーを設定
     setupAudioListeners(currentAudioRef.current);
@@ -545,7 +628,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 次のトラックをプリロード（再生順序配列を参照）
     preloadNextTrack();
-  }, [setupAudioListeners, switchToNextTrack, preloadNextTrack, setAudioSinkId]);
+  }, [setupAudioListeners, switchToNextTrack, preloadNextTrack, setAudioSinkId, connectAudioToWebAudio]);
 
   // playTrackの参照を常に最新に保つ
   useEffect(() => {
@@ -627,11 +710,17 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   }, []);
 
   // ユーザーインタラクション後に再生を開始
-  const startPlayback = useCallback(() => {
+  const startPlayback = useCallback(async () => {
     if (recordings.length === 0) return;
     if (hasStartedPlayback.current) return;
 
     console.log('再生を開始します:', recordings.length);
+
+    // AudioContextをresumeする（ユーザーインタラクション後に必要）
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+      console.log('AudioContextをresumeしました');
+    }
 
     // スナップショットがまだなければ作成
     if (!playbackSnapshotRef.current) {
@@ -663,6 +752,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       if (nextAudioRef.current) {
         nextAudioRef.current.pause();
         nextAudioRef.current.src = '';
+      }
+      // AudioContextをクローズ
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(err => {
+          console.error('AudioContext close error:', err);
+        });
       }
     };
   }, []);
