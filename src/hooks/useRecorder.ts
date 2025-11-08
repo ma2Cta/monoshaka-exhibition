@@ -61,7 +61,6 @@ export const useRecorder = (): UseRecorderReturn => {
       if (audioInputs.length > 0) {
         const firstDeviceId = audioInputs[0].deviceId;
         setSelectedDeviceId(firstDeviceId);
-        console.log('マイクデバイスを自動選択:', audioInputs[0].label);
       }
     } catch {
       setError('マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');

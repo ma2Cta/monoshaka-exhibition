@@ -23,7 +23,20 @@ export async function analyzeAudioVolume(file: File | Blob): Promise<VolumeMetad
     const arrayBuffer = await file.arrayBuffer();
 
     // デコードして AudioBuffer を取得
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    let audioBuffer: AudioBuffer;
+    try {
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    } catch (decodeError) {
+      // デコードエラーの詳細をログに出力
+      console.error('音声デコードエラー詳細:', {
+        error: decodeError,
+        fileSize: arrayBuffer.byteLength,
+        fileType: file.type,
+      });
+
+      const errorMessage = decodeError instanceof Error ? decodeError.message : 'Unknown error';
+      throw new Error(`音声ファイルのデコードに失敗しました: ${errorMessage}`);
+    }
 
     // すべてのチャンネルを解析（モノラル/ステレオ対応）
     let globalPeak = 0;

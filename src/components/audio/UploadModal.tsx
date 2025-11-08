@@ -7,10 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import AudioFileUploader from './AudioFileUploader';
+import FileUploader from './FileUploader';
 import type { Recording } from '@/lib/types';
 
-interface AudioUploadModalProps {
+interface UploadModalProps {
   playlistId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -19,14 +19,14 @@ interface AudioUploadModalProps {
 
 /**
  * 音声アップロード用モーダルダイアログ
- * AudioFileUploader をモーダル形式でラップします
+ * FileUploader をモーダル形式でラップします
  */
-export function AudioUploadModal({
+export function UploadModal({
   playlistId,
   open,
   onOpenChange,
   onUploadComplete,
-}: AudioUploadModalProps) {
+}: UploadModalProps) {
   function handleUploadComplete(newRecordings: Recording[]) {
     onUploadComplete(newRecordings);
     // アップロード完了後、モーダルを閉じる
@@ -43,7 +43,7 @@ export function AudioUploadModal({
             ドラッグ&ドロップで順序を変更できます。
           </DialogDescription>
         </DialogHeader>
-        <AudioFileUploader
+        <FileUploader
           playlistId={playlistId}
           onUploadComplete={handleUploadComplete}
         />

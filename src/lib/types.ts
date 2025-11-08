@@ -17,6 +17,7 @@ export interface Playlist {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  recording_count?: number;
 }
 
 export interface PlaylistRecording {

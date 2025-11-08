@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Play, Pause, Speaker } from "lucide-react";
-import { CompactVisualizer } from "@/components/player/CompactVisualizer";
+import { Visualizer } from "./Visualizer";
 import type { Recording } from "@/lib/types";
 
 interface PlaybackControlProps {
@@ -82,14 +82,6 @@ export function PlaybackControl({
     }
   }, [recordingCount, recordings]);
 
-  // デバイス状態のデバッグログ
-  useEffect(() => {
-    console.log("PlaybackControl: デバイス状態更新");
-    console.log("  - showDeviceList:", showDeviceList);
-    console.log("  - audioDevices.length:", audioDevices.length);
-    console.log("  - currentAudioDevice:", currentAudioDevice);
-  }, [showDeviceList, audioDevices, currentAudioDevice]);
-
   // 初期化時にデバイス一覧を自動取得
   useEffect(() => {
     if (audioOutputSupported && !showDeviceList && !hasInitializedDevices) {
@@ -107,17 +99,12 @@ export function PlaybackControl({
   useEffect(() => {
     const handleDeviceList = (event: Event) => {
       const customEvent = event as CustomEvent<MediaDeviceInfo[]>;
-      console.log("PlaybackControl: デバイス一覧を受信:", customEvent.detail);
       setAudioDevices(customEvent.detail);
       setShowDeviceList(true);
     };
 
     const handleDeviceSelected = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
-      console.log(
-        "PlaybackControl: デバイスが選択されました:",
-        customEvent.detail
-      );
       setSelectedDeviceName(customEvent.detail);
     };
 
@@ -140,7 +127,6 @@ export function PlaybackControl({
   useEffect(() => {
     if (audioDevices.length > 0 && !currentAudioDevice) {
       const firstDevice = audioDevices[0];
-      console.log("PlaybackControl: デバイスを自動選択:", firstDevice.label);
       handleDeviceSelect(firstDevice.deviceId);
     }
     // handleDeviceSelectは関数宣言で定義されているため、再レンダリングで変わらない
@@ -148,16 +134,12 @@ export function PlaybackControl({
   }, [audioDevices, currentAudioDevice]);
 
   async function handleDeviceSelect(deviceId: string) {
-    console.log("PlaybackControl: handleDeviceSelect呼び出し:", deviceId);
-    console.log("PlaybackControl: 利用可能なデバイス:", audioDevices);
-
     await setOutputDevice(deviceId);
 
     // 選択されたデバイス名を設定
     const device = audioDevices.find((d) => d.deviceId === deviceId);
     if (device) {
       const deviceName = device.label || "デフォルト";
-      console.log("PlaybackControl: デバイス名を設定:", deviceName);
       setSelectedDeviceName(deviceName);
     } else {
       console.warn("PlaybackControl: デバイスが見つかりません:", deviceId);
@@ -246,7 +228,7 @@ export function PlaybackControl({
 
           {/* ビジュアライザー */}
           <div className="ml-auto">
-            <CompactVisualizer isPlaying={isPlaying} />
+            <Visualizer isPlaying={isPlaying} />
           </div>
         </div>
 

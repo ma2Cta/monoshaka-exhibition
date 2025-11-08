@@ -11,7 +11,6 @@ import {
   getRecordingUrl,
   deleteRecording,
   reorderPlaylistRecordings,
-  getPlaylistRecordings,
 } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,8 +57,8 @@ import {
   Speaker,
   Volume2,
 } from "lucide-react";
-import VolumeAnalyzerModal from "./VolumeAnalyzerModal";
-import TranscriptionModal from "./TranscriptionModal";
+import VolumeAnalyzerModal from "@/components/audio/VolumeAnalyzerModal";
+import TranscriptionModal from "@/components/audio/TranscriptionModal";
 import {
   DndContext,
   closestCenter,
@@ -86,6 +85,7 @@ interface RecordingListProps {
   onRecordingDeleted?: (recordingId: string) => void; // 削除完了時のコールバック
   onRecordingReordered?: (newRecordings: Recording[]) => void; // 並び替え完了時のコールバック
   onAnalysisComplete?: () => void | Promise<void>; // 音量最適化完了時のコールバック
+  onTranscriptionComplete?: () => void | Promise<void>; // 文字起こし完了時のコールバック
 }
 
 // ヘルパー関数
@@ -223,17 +223,15 @@ const SortableRow = React.memo(function SortableRow({
 });
 
 export default function RecordingList({
-  recordings: propRecordings,
+  recordings = [],
   onUpdate,
   playlistId,
   onUploadRequest,
   onRecordingDeleted,
   onRecordingReordered,
   onAnalysisComplete,
+  onTranscriptionComplete,
 }: RecordingListProps = {}) {
-  const [recordings, setRecordings] = useState<Recording[]>(
-    propRecordings || []
-  );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(
@@ -267,11 +265,6 @@ export default function RecordingList({
   // ドラッグ&ドロップが有効かどうか
   const isDragEnabled = !!playlistId;
 
-  // propRecordingsが変更されたら内部stateを更新
-  useEffect(() => {
-    setRecordings(propRecordings || []);
-  }, [propRecordings]);
-
   // 初期化時にデバイス一覧を取得（既定のデバイスを除外）
   useEffect(() => {
     async function initAudioDevices() {
@@ -300,7 +293,6 @@ export default function RecordingList({
             );
             // 既定のデバイスIDだった場合はクリア（状態不整合を防ぐため）
             if (savedDeviceId === "default" || savedDeviceId === "") {
-              console.log("既定のデバイスIDが保存されていたためクリアします");
               localStorage.removeItem("recordingListAudioDeviceId");
             } else if (
               savedDeviceId &&
@@ -347,13 +339,6 @@ export default function RecordingList({
       }
 
       setDeleteDialogOpen(false);
-
-      // ローカルstateから削除したレコーディングを除外
-      setRecordings((prevRecordings) =>
-        prevRecordings.filter(
-          (recording) => recording.id !== selectedRecording.id
-        )
-      );
 
       // 親コンポーネントに削除を通知（ページ全体のリフレッシュを避ける）
       // これによりループ再生側でも削除を検出できる
@@ -437,8 +422,10 @@ export default function RecordingList({
 
     try {
       setIsRefreshing(true);
-      const recordingsData = await getPlaylistRecordings(playlistId);
-      setRecordings(recordingsData);
+      // 親コンポーネントに通知して、propsのrecordingsを更新
+      if (onUpdate) {
+        await onUpdate();
+      }
     } catch (err) {
       console.error("再読み込みエラー:", err);
       alert("録音一覧の再読み込みに失敗しました");
@@ -450,7 +437,7 @@ export default function RecordingList({
   async function handleVolumeAnalysisComplete() {
     // 音量最適化が完了したら、親コンポーネントに通知
     // これによりループ再生側でもLUFS値の更新を検出できる
-    await handleRefresh();
+    // handleRefreshは呼ばない（ページリロードでループ再生が途切れるため）
     onAnalysisComplete?.();
   }
 
@@ -468,29 +455,21 @@ export default function RecordingList({
       return;
     }
 
-    // 元のrecordingsを保存（ロールバック用）
-    const originalRecordings = recordings;
-
-    // 楽観的更新：UIを即座に更新
+    // 新しい順序を計算
     const newRecordings = arrayMove(recordings, oldIndex, newIndex);
-    setRecordings(newRecordings);
+
+    // 親コンポーネントに並び替えを通知（楽観的更新）
+    // これによりループ再生側でも並び替えを検出できる
+    onRecordingReordered?.(newRecordings);
 
     try {
       // バックエンドに順番を保存
       const recordingIds = newRecordings.map((r) => r.id);
-      console.log("並び替え保存中:", { playlistId, recordingIds });
       await reorderPlaylistRecordings(playlistId, recordingIds);
-      console.log("並び替え保存成功");
-
-      // 親コンポーネントに並び替えを通知（ページ全体のリフレッシュを避ける）
-      // これによりループ再生側でも並び替えを検出できる
-      onRecordingReordered?.(newRecordings);
     } catch (err) {
       console.error("並び替えエラー:", err);
       alert("並び替えに失敗しました");
-      // エラー時は元の順番にロールバック
-      setRecordings(originalRecordings);
-      // データとUIの整合性を保つためonUpdateを呼ぶ
+      // エラー時はDBから最新データを取得してロールバック
       if (onUpdate) {
         await onUpdate();
       }
@@ -657,7 +636,7 @@ export default function RecordingList({
         recordings={recordings}
         open={transcriptionModalOpen}
         onOpenChange={setTranscriptionModalOpen}
-        onTranscriptionComplete={handleRefresh}
+        onTranscriptionComplete={onTranscriptionComplete}
       />
     </Card>
   );

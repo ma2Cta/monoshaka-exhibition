@@ -121,17 +121,13 @@ export function getRecordingUrl(filePath: string): string {
  */
 export async function deleteRecording(id: string, filePath: string) {
   const supabase = getSupabaseClient();
-  console.log('deleteRecording呼び出し:', { id, filePath });
 
   // 1. データベースからレコードを削除
-  console.log('データベースから削除を試行...');
   const { data: dbData, error: dbError } = await supabase
     .from('recordings')
     .delete()
     .eq('id', id)
     .select();
-
-  console.log('データベース削除結果:', { dbData, dbError });
 
   if (dbError) {
     console.error('データベース削除エラー:', dbError);
@@ -139,19 +135,14 @@ export async function deleteRecording(id: string, filePath: string) {
   }
 
   // 2. Storageからファイルを削除
-  console.log('Storageから削除を試行...', filePath);
   const { data: storageData, error: storageError } = await supabase.storage
     .from('recordings')
     .remove([filePath]);
-
-  console.log('Storage削除結果:', { storageData, storageError });
 
   if (storageError) {
     console.error('Storage削除エラー:', storageError);
     throw new Error(`ストレージ削除エラー: ${storageError.message}`);
   }
-
-  console.log('削除完了');
 }
 
 // ========================================
@@ -164,16 +155,35 @@ export async function deleteRecording(id: string, filePath: string) {
  */
 export async function getPlaylists(): Promise<Playlist[]> {
   const supabase = getSupabaseClient();
+
+  // 型アサーション用の型定義
+  type PlaylistWithCount = Database['public']['Tables']['playlists']['Row'] & {
+    playlist_recordings: { count: number }[];
+  };
+
   const { data, error } = await supabase
     .from('playlists')
-    .select('*')
+    .select(`
+      *,
+      playlist_recordings(count)
+    `)
     .order('created_at', { ascending: false });
 
   if (error) {
     throw new Error(`取得エラー: ${error.message}`);
   }
 
-  return data || [];
+  // 録音数を含めた形式に変換
+  const playlists: Playlist[] = ((data as unknown as PlaylistWithCount[]) || []).map((playlist) => ({
+    id: playlist.id,
+    name: playlist.name,
+    is_active: playlist.is_active,
+    created_at: playlist.created_at,
+    updated_at: playlist.updated_at,
+    recording_count: playlist.playlist_recordings?.[0]?.count || 0,
+  }));
+
+  return playlists;
 }
 
 /**
@@ -460,7 +470,6 @@ export async function updateRecordingTranscription(
   id: string,
   transcription: string
 ): Promise<void> {
-  console.log('updateRecordingTranscription 開始:', { id, transcription });
   const supabase = getSupabaseClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -469,8 +478,6 @@ export async function updateRecordingTranscription(
     .update({ transcription })
     .eq('id', id)
     .select();
-
-  console.log('Supabase update 結果:', { data, error });
 
   if (error) {
     console.error('updateRecordingTranscription error:', error);
@@ -481,6 +488,4 @@ export async function updateRecordingTranscription(
     console.error('更新されたレコードが0件です');
     throw new Error('更新されたレコードがありません。レコードが存在しないか、権限がない可能性があります。');
   }
-
-  console.log('updateRecordingTranscription 成功:', data);
 }

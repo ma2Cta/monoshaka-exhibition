@@ -15,15 +15,15 @@ import {
 import { Loader2, Mic, Square, Send, CheckCircle2 } from 'lucide-react';
 import type { Recording } from '@/lib/types';
 
-interface AdminRecorderProps {
+interface RecorderProps {
   playlistId: string;
   onRecordingAdded?: (recording: Recording) => void;
 }
 
 /**
- * 管理画面用の録音コンポーネント
+ * 録音コンポーネント
  */
-export function AdminRecorder({ playlistId, onRecordingAdded }: AdminRecorderProps) {
+export function Recorder({ playlistId, onRecordingAdded }: RecorderProps) {
   const {
     state,
     recordedBlob,

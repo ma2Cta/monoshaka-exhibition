@@ -7,34 +7,31 @@ import {
   getPlaylists,
   createPlaylist,
   deletePlaylist,
-  setActivePlaylist,
 } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Plus, Trash2, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Plus, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 
 interface PlaylistManagerProps {
   basePath?: string;
 }
 
-export default function PlaylistManager({ basePath = '/admin' }: PlaylistManagerProps = {}) {
+export default function PlaylistManager({ basePath = '' }: PlaylistManagerProps = {}) {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [activatingId, setActivatingId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [activateDialogOpen, setActivateDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [selectedPlaylist, setSelectedPlaylist] = useState<{ id: string; name: string } | null>(null);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<{ id: string; name: string; recordingCount: number } | null>(null);
 
   useEffect(() => {
     loadPlaylists();
@@ -73,8 +70,8 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
     }
   }
 
-  function openDeleteDialog(id: string, name: string) {
-    setSelectedPlaylist({ id, name });
+  function openDeleteDialog(id: string, name: string, recordingCount: number) {
+    setSelectedPlaylist({ id, name, recordingCount });
     setDeleteDialogOpen(true);
   }
 
@@ -91,28 +88,6 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
       setError(`削除に失敗しました: ${message}`);
     } finally {
       setDeletingId(null);
-      setSelectedPlaylist(null);
-    }
-  }
-
-  function openActivateDialog(id: string, name: string) {
-    setSelectedPlaylist({ id, name });
-    setActivateDialogOpen(true);
-  }
-
-  async function confirmActivate() {
-    if (!selectedPlaylist) return;
-
-    try {
-      setActivatingId(selectedPlaylist.id);
-      await setActivePlaylist(selectedPlaylist.id);
-      await loadPlaylists();
-      setActivateDialogOpen(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '不明なエラー';
-      setError(`変更に失敗しました: ${message}`);
-    } finally {
-      setActivatingId(null);
       setSelectedPlaylist(null);
     }
   }
@@ -166,78 +141,64 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>状態</TableHead>
                     <TableHead>プレイリスト名</TableHead>
+                    <TableHead>録音数</TableHead>
                     <TableHead>作成日時</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {playlists.map((playlist) => (
-                    <TableRow key={playlist.id}>
-                      <TableCell>
-                        {playlist.is_active ? (
-                          <Badge variant="default" className="bg-green-600 hover:bg-green-700">
-                            <CheckCircle2 className="mr-1 h-3 w-3" />
-                            有効
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">無効</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          href={`${basePath}/playlists/${playlist.id}`}
-                          className="text-primary hover:underline font-medium inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          {playlist.name}
-                          <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      </TableCell>
-                      <TableCell>{formatDate(playlist.created_at)}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        {!playlist.is_active && (
-                          <Button
-                            onClick={() => openActivateDialog(playlist.id, playlist.name)}
-                            disabled={activatingId === playlist.id}
-                            variant="default"
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700"
+                  {playlists.map((playlist) => {
+                    const hasRecordings = (playlist.recording_count || 0) > 0;
+                    return (
+                      <TableRow key={playlist.id}>
+                        <TableCell>
+                          <Link
+                            href={`${basePath}/playlists/${playlist.id}`}
+                            className="text-primary hover:underline font-medium inline-flex items-center gap-1 cursor-pointer"
                           >
-                            {activatingId === playlist.id ? (
-                              <>
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                設定中...
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle2 className="mr-1 h-3 w-3" />
-                                有効にする
-                              </>
-                            )}
-                          </Button>
-                        )}
-                        <Button
-                          onClick={() => openDeleteDialog(playlist.id, playlist.name)}
-                          disabled={deletingId === playlist.id}
-                          variant="destructive"
-                          size="sm"
-                        >
-                          {deletingId === playlist.id ? (
-                            <>
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              削除中...
-                            </>
-                          ) : (
-                            <>
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              削除
-                            </>
-                          )}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {playlist.name}
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </TableCell>
+                        <TableCell>{playlist.recording_count || 0}件</TableCell>
+                        <TableCell>{formatDate(playlist.created_at)}</TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    onClick={() => openDeleteDialog(playlist.id, playlist.name, playlist.recording_count || 0)}
+                                    disabled={deletingId === playlist.id || hasRecordings}
+                                    variant="destructive"
+                                    size="sm"
+                                  >
+                                    {deletingId === playlist.id ? (
+                                      <>
+                                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                        削除中...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Trash2 className="mr-1 h-3 w-3" />
+                                        削除
+                                      </>
+                                    )}
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              {hasRecordings && (
+                                <TooltipContent>
+                                  <p>録音が含まれているプレイリストは削除できません</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -251,34 +212,26 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
           <AlertDialogHeader>
             <AlertDialogTitle>プレイリストを削除しますか？</AlertDialogTitle>
             <AlertDialogDescription>
-              プレイリスト「{selectedPlaylist?.name}」を削除してもよろしいですか？
-              この操作は取り消せません。
+              {selectedPlaylist && selectedPlaylist.recordingCount > 0 ? (
+                <>
+                  プレイリスト「{selectedPlaylist?.name}」には{selectedPlaylist.recordingCount}件の録音が含まれています。
+                  録音をすべて削除してから、プレイリストを削除してください。
+                </>
+              ) : (
+                <>
+                  プレイリスト「{selectedPlaylist?.name}」を削除してもよろしいですか？
+                  この操作は取り消せません。
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
-              削除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 有効化確認ダイアログ */}
-      <AlertDialog open={activateDialogOpen} onOpenChange={setActivateDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>プレイリストを有効にしますか？</AlertDialogTitle>
-            <AlertDialogDescription>
-              プレイリスト「{selectedPlaylist?.name}」を有効にします。
-              他のプレイリストが有効な場合は、そちらが無効になります。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>キャンセル</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmActivate} className="bg-green-600 hover:bg-green-700">
-              有効にする
-            </AlertDialogAction>
+            {selectedPlaylist && selectedPlaylist.recordingCount === 0 && (
+              <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+                削除
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

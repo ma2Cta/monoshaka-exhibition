@@ -36,9 +36,16 @@ export default function VolumeAnalyzerModal({
   const [completed, setCompleted] = useState(0);
   const [failed, setFailed] = useState(0);
   const [error, setError] = useState('');
+  const [failedFiles, setFailedFiles] = useState<string[]>([]);
 
   // 解析が必要な録音（LUFS値がない録音）を絞り込む
   const recordingsNeedAnalysis = recordings.filter((r) => r.lufs == null);
+
+  // ファイルパスからファイル名のみを抽出
+  const getFileName = (filePath: string): string => {
+    const parts = filePath.split('/');
+    return parts[parts.length - 1] || filePath;
+  };
 
   async function handleAnalyzeAll() {
     if (recordingsNeedAnalysis.length === 0) {
@@ -50,6 +57,7 @@ export default function VolumeAnalyzerModal({
     setError('');
     setCompleted(0);
     setFailed(0);
+    setFailedFiles([]);
     setProgress(0);
 
     const supabase = createClient();
@@ -58,6 +66,7 @@ export default function VolumeAnalyzerModal({
     // ローカル変数で成功/失敗を追跡
     let completedCount = 0;
     let failedCount = 0;
+    const failedFilesList: string[] = [];
 
     for (let i = 0; i < recordingsNeedAnalysis.length; i++) {
       const recording = recordingsNeedAnalysis[i];
@@ -70,7 +79,11 @@ export default function VolumeAnalyzerModal({
         if (!response.ok) {
           throw new Error('ファイルの取得に失敗しました');
         }
-        const blob = await response.blob();
+
+        // レスポンスからblobを取得し、正しいmimeTypeを設定
+        const originalBlob = await response.blob();
+        const contentType = response.headers.get('content-type') || 'audio/webm';
+        const blob = new Blob([originalBlob], { type: contentType });
 
         // 音量最適化のための解析
         const volumeMetadata = await analyzeAudioVolume(blob);
@@ -96,6 +109,8 @@ export default function VolumeAnalyzerModal({
         console.error(`Failed to analyze ${recording.file_path}:`, err);
         failedCount++;
         setFailed(failedCount);
+        failedFilesList.push(getFileName(recording.file_path));
+        setFailedFiles([...failedFilesList]);
       }
 
       // 進捗を更新
@@ -106,8 +121,19 @@ export default function VolumeAnalyzerModal({
     setCurrentFile('');
 
     // 完了後に必ずコールバックを呼ぶ（親コンポーネントでデータを再取得）
-    console.log(`音量最適化完了: 成功 ${completedCount}件、失敗 ${failedCount}件`);
     onAnalysisComplete();
+
+    // 2秒後にモーダルを自動で閉じる
+    setTimeout(() => {
+      onOpenChange(false);
+      // モーダルを閉じた後、stateをリセット
+      setCompleted(0);
+      setFailed(0);
+      setFailedFiles([]);
+      setProgress(0);
+      setCurrentFile('');
+      setError('');
+    }, 2000);
   }
 
   return (
@@ -153,9 +179,11 @@ export default function VolumeAnalyzerModal({
                     </span>
                   </div>
                   <Progress value={progress} className="h-2" />
-                  <p className="text-xs text-muted-foreground truncate">
-                    解析中: {currentFile}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">
+                      解析中: {getFileName(currentFile)}
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -178,12 +206,28 @@ export default function VolumeAnalyzerModal({
               </Button>
 
               {!isAnalyzing && (completed > 0 || failed > 0) && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    解析完了: 成功 {completed}件、失敗 {failed}件
-                  </AlertDescription>
-                </Alert>
+                <div className="space-y-2">
+                  <Alert variant={failed > 0 ? "destructive" : "default"}>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      解析完了: 成功 {completed}件、失敗 {failed}件
+                      {failed > 0 && (
+                        <div className="mt-2 text-xs">
+                          <p className="font-semibold">失敗したファイル:</p>
+                          <ul className="list-disc list-inside mt-1 space-y-1">
+                            {failedFiles.map((file, index) => (
+                              <li key={index} className="truncate">{file}</li>
+                            ))}
+                          </ul>
+                          <p className="mt-2">
+                            ※ WebM形式の音声ファイルはブラウザでデコードできない場合があります。
+                            これらのファイルは再生時に自動で音量調整されません。
+                          </p>
+                        </div>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                </div>
               )}
             </>
           )}
