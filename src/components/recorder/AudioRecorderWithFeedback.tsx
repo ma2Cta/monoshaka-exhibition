@@ -132,9 +132,16 @@ export default function AudioRecorderWithFeedback() {
   }, [selectedOutputDeviceId, setAudioContextSinkId]);
 
   // 音声フィードバック用の関数（共有AudioContextを使用）
-  const playBeep = useCallback((frequency: number, duration: number, volume: number = 0.3) => {
+  const playBeep = useCallback(async (frequency: number, duration: number, volume: number = 0.3) => {
     try {
       const audioContext = getAudioContext();
+
+      // AudioContextがsuspended状態の場合、resume()で再開（Autoplay Policy対策）
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+        console.log('AudioContextを再開しました');
+      }
+
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
