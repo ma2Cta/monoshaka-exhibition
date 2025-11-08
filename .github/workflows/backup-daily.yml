@@ -53,7 +53,7 @@ jobs:
           gh release create "backup-${{ steps.date.outputs.TODAY }}" \
             "$BACKUP_FILE" \
             --title "Backup - ${{ steps.date.outputs.TODAY }}" \
-            --notes "Daily incremental backup for ${{ steps.date.outputs.TODAY }}" \
+            --notes "Daily full backup for ${{ steps.date.outputs.TODAY }}" \
             --draft
 
       - name: Cleanup old draft releases
