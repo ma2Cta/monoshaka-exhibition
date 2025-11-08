@@ -1,7 +1,7 @@
 /**
- * 日次差分バックアップスクリプト
+ * 日次全体バックアップスクリプト
  *
- * 過去24時間以内に作成された録音ファイルとメタデータをバックアップします。
+ * 全ての録音ファイルとメタデータをバックアップします。
  *
  * 前提条件:
  * - 環境変数に以下を設定:
@@ -54,16 +54,12 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 /**
- * 過去24時間の録音データを取得
+ * 全ての録音データを取得
  */
-async function getRecentRecordings() {
-  const twentyFourHoursAgo = new Date();
-  twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-
+async function getAllRecordings() {
   const { data, error } = await supabase
     .from("recordings")
     .select("*")
-    .gte("created_at", twentyFourHoursAgo.toISOString())
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -92,13 +88,13 @@ async function downloadFile(filePath: string): Promise<Blob> {
  * バックアップを実行
  */
 async function runBackup() {
-  console.log("=== 日次差分バックアップを開始 ===\n");
+  console.log("=== 日次全体バックアップを開始 ===\n");
   console.log(`接続先: ${supabaseUrl}`);
   console.log(`実行時刻: ${new Date().toISOString()}\n`);
 
-  // 1. 過去24時間の録音データを取得
-  console.log("📊 過去24時間の録音データを取得中...");
-  const recordings = await getRecentRecordings();
+  // 1. 全ての録音データを取得
+  console.log("📊 全ての録音データを取得中...");
+  const recordings = await getAllRecordings();
   console.log(`✓ ${recordings.length}件の録音を発見\n`);
 
   if (recordings.length === 0) {
@@ -125,7 +121,7 @@ async function runBackup() {
     JSON.stringify(
       {
         backup_date: new Date().toISOString(),
-        backup_type: "daily-incremental",
+        backup_type: "daily-full",
         recording_count: recordings.length,
         recordings,
       },
