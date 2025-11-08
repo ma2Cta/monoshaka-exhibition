@@ -38,6 +38,10 @@ export default function AudioRecorderWithFeedback() {
   // 共有のAudioContextを管理
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // ユーザーインタラクションがあったかどうか（Autoplay Policy対策）
+  const [hasUserInteracted, setHasUserInteracted] = useState<boolean>(false);
+  const waitingSoundAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // スピーカーデバイス一覧を取得
   const fetchAudioOutputDevices = useCallback(async () => {
     try {
@@ -82,6 +86,8 @@ export default function AudioRecorderWithFeedback() {
 
   // スピーカーデバイスを変更
   const handleOutputDeviceChange = useCallback(async (deviceId: string) => {
+    // ユーザーインタラクションがあったことをマーク（Autoplay Policy対策）
+    setHasUserInteracted(true);
     setSelectedOutputDeviceId(deviceId);
     localStorage.setItem('recordingAudioOutputDeviceId', deviceId);
     await setAudioContextSinkId(deviceId);
@@ -105,11 +111,24 @@ export default function AudioRecorderWithFeedback() {
     checkAudioOutputSupport();
   }, [fetchAudioOutputDevices]);
 
-  // 選択されたデバイスが変更されたらAudioContextに適用
+  // 選択されたデバイスが変更されたらAudioContextとキープアライブ音声に適用
   useEffect(() => {
-    if (selectedOutputDeviceId) {
-      setAudioContextSinkId(selectedOutputDeviceId);
-    }
+    const updateSinkId = async () => {
+      if (selectedOutputDeviceId) {
+        await setAudioContextSinkId(selectedOutputDeviceId);
+
+        // キープアライブ用のAudio要素にも適用
+        if (waitingSoundAudioRef.current && 'setSinkId' in waitingSoundAudioRef.current) {
+          try {
+            await (waitingSoundAudioRef.current as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(selectedOutputDeviceId);
+            console.log('キープアライブ音声: デバイス変更完了', selectedOutputDeviceId);
+          } catch (error) {
+            console.error('キープアライブ音声のデバイス設定エラー:', error);
+          }
+        }
+      }
+    };
+    updateSinkId();
   }, [selectedOutputDeviceId, setAudioContextSinkId]);
 
   // 音声フィードバック用の関数（共有AudioContextを使用）
@@ -135,28 +154,34 @@ export default function AudioRecorderWithFeedback() {
     }
   }, [getAudioContext]);
 
-  // テキスト読み上げ用の関数
-  const playTextToSpeech = useCallback((text: string) => {
-    try {
-      if ('speechSynthesis' in window) {
-        // 既存の読み上げをキャンセル
-        window.speechSynthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ja-JP'; // 日本語
-        utterance.rate = 1.0; // 読み上げ速度
-        utterance.pitch = 1.0; // 音の高さ
-        utterance.volume = 0.8; // 音量
-
-        window.speechSynthesis.speak(utterance);
-        console.log('音声読み上げ:', text);
-      } else {
-        console.warn('このブラウザはWeb Speech APIをサポートしていません');
-      }
-    } catch (error) {
-      console.error('音声読み上げエラー:', error);
+  // キープアライブ用の音声再生関数
+  const playWaitingSound = useCallback(async () => {
+    // ユーザーインタラクションがない場合は再生しない（Autoplay Policy対策）
+    if (!hasUserInteracted) {
+      console.log('キープアライブ音声: ユーザーインタラクション待機中');
+      return;
     }
-  }, []);
+
+    try {
+      // Audio要素を初回のみ作成
+      if (!waitingSoundAudioRef.current) {
+        waitingSoundAudioRef.current = new Audio('/sounds/wait_sound.wav');
+
+        // 選択されたスピーカーデバイスで再生
+        if (audioOutputSupported && selectedOutputDeviceId && 'setSinkId' in waitingSoundAudioRef.current) {
+          await (waitingSoundAudioRef.current as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(selectedOutputDeviceId);
+          console.log('キープアライブ音声: デバイス設定完了', selectedOutputDeviceId);
+        }
+      }
+
+      // 再生前に巻き戻し
+      waitingSoundAudioRef.current.currentTime = 0;
+      await waitingSoundAudioRef.current.play();
+      console.log('キープアライブ音声を再生しました');
+    } catch (error) {
+      console.error('キープアライブ音声再生エラー:', error);
+    }
+  }, [hasUserInteracted, audioOutputSupported, selectedOutputDeviceId]);
 
   // 録音開始音（シンプルな「ピッ」）
   const playStartSound = useCallback(() => {
@@ -241,6 +266,8 @@ export default function AudioRecorderWithFeedback() {
     if (state === 'stopped') {
       reset();
     }
+    // ユーザーインタラクションがあったことをマーク（Autoplay Policy対策）
+    setHasUserInteracted(true);
     // 録音開始音を再生
     playStartSound();
     // 効果音が録音に入らないよう、200ms遅延させてから録音開始
@@ -323,6 +350,27 @@ export default function AudioRecorderWithFeedback() {
     };
   }, [state, uploadState, recordedBlob, stopRecording, handleStartRecording, handleUpload, playStopSound]);
 
+  // ページ上の任意のクリックでユーザーインタラクションを検知（Autoplay Policy対策）
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      if (!hasUserInteracted) {
+        setHasUserInteracted(true);
+        console.log('ユーザーインタラクションを検知しました。キープアライブ音声が有効化されました。');
+      }
+    };
+
+    // クリック、タッチ、キーボード操作を監視
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('touchstart', handleUserInteraction);
+    window.addEventListener('keydown', handleUserInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+    };
+  }, [hasUserInteracted]);
+
   // Bluetoothスピーカーのオートパワーオフを防ぐためのキープアライブ音声
   useEffect(() => {
     const KEEPALIVE_INTERVAL = 45000; // 45秒
@@ -330,7 +378,7 @@ export default function AudioRecorderWithFeedback() {
     const playKeepAliveMessage = () => {
       // 録音中は音を鳴らさない（録音に混入しないように）
       if (state !== 'recording') {
-        playTextToSpeech('録音を待機しています。');
+        playWaitingSound();
       }
     };
 
@@ -339,17 +387,17 @@ export default function AudioRecorderWithFeedback() {
     return () => {
       clearInterval(intervalId);
     };
-  }, [state, playTextToSpeech]);
+  }, [state, playWaitingSound]);
 
-  // クリーンアップ: AudioContextをクローズ、音声読み上げをキャンセル
+  // クリーンアップ: AudioContextをクローズ、キープアライブ音声を停止
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
-      // 音声読み上げが残っていればキャンセル
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+      if (waitingSoundAudioRef.current) {
+        waitingSoundAudioRef.current.pause();
+        waitingSoundAudioRef.current = null;
       }
     };
   }, []);
