@@ -90,25 +90,28 @@ export default function PlaylistDetailV2Page() {
         <div className="space-y-6">
           {/* ヘッダー */}
           <div>
-            <Button
-              onClick={() => router.push("/admin/v2")}
-              variant="ghost"
-              className="mb-4"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              管理画面に戻る
-            </Button>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold">{playlistName}</h1>
-              {playlistIsActive && (
-                <Badge
-                  variant="default"
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  <CheckCircle2 className="mr-1 h-3 w-3" />
-                  有効
-                </Badge>
-              )}
+            <div className="flex items-start justify-between gap-4 mb-2">
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold">{playlistName}</h1>
+                {playlistIsActive && (
+                  <Badge
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    有効
+                  </Badge>
+                )}
+              </div>
+              <Button
+                onClick={() => router.push("/admin/v2")}
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                戻る
+              </Button>
             </div>
             <p className="text-muted-foreground">
               録音数: {recordings.length}件
