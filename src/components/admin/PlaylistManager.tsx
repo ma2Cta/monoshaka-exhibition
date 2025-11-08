@@ -299,7 +299,7 @@ export default function PlaylistManager({ basePath = '/admin' }: PlaylistManager
               onChange={(e) => setNewPlaylistName(e.target.value)}
               placeholder="プレイリスト名を入力"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                   handleCreate();
                 }
               }}

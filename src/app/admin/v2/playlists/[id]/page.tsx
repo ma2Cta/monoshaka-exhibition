@@ -6,11 +6,13 @@ import { getPlaylistById, getPlaylistRecordings } from "@/lib/supabase";
 import RecordingList from "@/components/admin/RecordingList";
 import { PlaybackControl } from "@/components/admin/PlaybackControl";
 import { AudioUploadModal } from "@/components/admin/AudioUploadModal";
+import { AdminRecorder } from "@/components/admin/AdminRecorder";
 import Header from "@/components/layout/Header";
 import type { Recording } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ScrollToTop } from "@/components/ui/scroll-to-top";
 import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 
 export default function PlaylistDetailV2Page() {
@@ -55,6 +57,38 @@ export default function PlaylistDetailV2Page() {
     // NOTE: ページ全体を再読み込みせず、ローカルstateのみを更新する
     // これにより、PlaybackControlでの再生が中断されるのを防ぐ
     setRecordings((prev) => [...prev, ...newRecordings]);
+  }
+
+  function handleRecordingAdded(recording: Recording) {
+    // AdminRecorderから録音が追加された場合
+    // ページ全体をリフレッシュせず、ローカルstateのみを更新
+    setRecordings((prev) => [...prev, recording]);
+  }
+
+  function handleRecordingDeleted(recordingId: string) {
+    // RecordingListから録音が削除された場合
+    // ページ全体をリフレッシュせず、ローカルstateのみを更新
+    // これによりPlaybackControl/usePlayerでも削除を検出できる
+    setRecordings((prev) => prev.filter((r) => r.id !== recordingId));
+  }
+
+  function handleRecordingReordered(newRecordings: Recording[]) {
+    // RecordingListから並び替えが行われた場合
+    // ページ全体をリフレッシュせず、ローカルstateのみを更新
+    // これによりPlaybackControl/usePlayerでも並び替えを検出できる
+    setRecordings(newRecordings);
+  }
+
+  async function handleAnalysisComplete() {
+    // 音量最適化が完了した場合
+    // データベースから最新のLUFS値を取得
+    // これによりPlaybackControl/usePlayerでもLUFS値の更新を検出できる
+    try {
+      const recordingsData = await getPlaylistRecordings(playlistId);
+      setRecordings(recordingsData);
+    } catch (err) {
+      console.error("録音データの再取得に失敗:", err);
+    }
   }
 
   if (isLoading) {
@@ -113,16 +147,20 @@ export default function PlaylistDetailV2Page() {
                 戻る
               </Button>
             </div>
-            <p className="text-muted-foreground">
-              録音数: {recordings.length}件
-            </p>
           </div>
 
-          {/* 再生コントロール */}
-          <PlaybackControl
-            playlistId={playlistId}
-            recordingCount={recordings.length}
-          />
+          {/* 再生コントロールと録音 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PlaybackControl
+              playlistId={playlistId}
+              recordingCount={recordings.length}
+              recordings={recordings}
+            />
+            <AdminRecorder
+              playlistId={playlistId}
+              onRecordingAdded={handleRecordingAdded}
+            />
+          </div>
 
           {/* 録音一覧 */}
           <div>
@@ -131,6 +169,9 @@ export default function PlaylistDetailV2Page() {
               onUpdate={loadPlaylistData}
               playlistId={playlistId}
               onUploadRequest={() => setIsUploadModalOpen(true)}
+              onRecordingDeleted={handleRecordingDeleted}
+              onRecordingReordered={handleRecordingReordered}
+              onAnalysisComplete={handleAnalysisComplete}
             />
           </div>
         </div>
@@ -143,6 +184,9 @@ export default function PlaylistDetailV2Page() {
         onOpenChange={setIsUploadModalOpen}
         onUploadComplete={handleUploadComplete}
       />
+
+      {/* トップに戻るボタン */}
+      <ScrollToTop />
     </>
   );
 }

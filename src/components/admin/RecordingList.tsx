@@ -83,6 +83,9 @@ interface RecordingListProps {
   onUpdate?: () => void | Promise<void>;
   playlistId?: string; // プレイリストID（指定時のみドラッグ&ドロップ有効）
   onUploadRequest?: () => void; // アップロードモーダルを開くコールバック
+  onRecordingDeleted?: (recordingId: string) => void; // 削除完了時のコールバック
+  onRecordingReordered?: (newRecordings: Recording[]) => void; // 並び替え完了時のコールバック
+  onAnalysisComplete?: () => void | Promise<void>; // 音量最適化完了時のコールバック
 }
 
 // ヘルパー関数
@@ -224,6 +227,9 @@ export default function RecordingList({
   onUpdate,
   playlistId,
   onUploadRequest,
+  onRecordingDeleted,
+  onRecordingReordered,
+  onAnalysisComplete,
 }: RecordingListProps = {}) {
   const [recordings, setRecordings] = useState<Recording[]>(
     propRecordings || []
@@ -245,8 +251,9 @@ export default function RecordingList({
   // 音声デバイス選択用のstate
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [showDeviceList, setShowDeviceList] = useState(false);
-  const [currentAudioDevice, setCurrentAudioDevice] =
-    useState<string>("default");
+  const [currentAudioDevice, setCurrentAudioDevice] = useState<string | null>(
+    null
+  );
   const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
 
   // ドラッグ&ドロップのセンサー設定
@@ -265,7 +272,7 @@ export default function RecordingList({
     setRecordings(propRecordings || []);
   }, [propRecordings]);
 
-  // 初期化時にデバイス一覧を取得
+  // 初期化時にデバイス一覧を取得（既定のデバイスを除外）
   useEffect(() => {
     async function initAudioDevices() {
       if (
@@ -276,8 +283,12 @@ export default function RecordingList({
         try {
           setHasInitializedDevices(true);
           const devices = await navigator.mediaDevices.enumerateDevices();
+          // 既定のデバイス（default）を除外し、実際のデバイスのみを取得
           const audioOutputs = devices.filter(
-            (device) => device.kind === "audiooutput"
+            (device) =>
+              device.kind === "audiooutput" &&
+              device.deviceId !== "default" &&
+              device.deviceId !== ""
           );
           if (audioOutputs.length > 0) {
             setAudioDevices(audioOutputs);
@@ -287,7 +298,11 @@ export default function RecordingList({
             const savedDeviceId = localStorage.getItem(
               "recordingListAudioDeviceId"
             );
-            if (
+            // 既定のデバイスIDだった場合はクリア（状態不整合を防ぐため）
+            if (savedDeviceId === "default" || savedDeviceId === "") {
+              console.log("既定のデバイスIDが保存されていたためクリアします");
+              localStorage.removeItem("recordingListAudioDeviceId");
+            } else if (
               savedDeviceId &&
               audioOutputs.some((d) => d.deviceId === savedDeviceId)
             ) {
@@ -340,9 +355,9 @@ export default function RecordingList({
         )
       );
 
-      // NOTE: onUpdateは呼び出さない
-      // データベースからの削除は成功しているが、ページ全体を再読み込みすると
-      // 再生中の音声が中断されるため、ローカルstateの更新のみで対応する
+      // 親コンポーネントに削除を通知（ページ全体のリフレッシュを避ける）
+      // これによりループ再生側でも削除を検出できる
+      onRecordingDeleted?.(selectedRecording.id);
     } catch (err) {
       console.error("削除エラー:", err);
       alert("削除に失敗しました");
@@ -370,12 +385,8 @@ export default function RecordingList({
     const url = getRecordingUrl(filePath);
     const audio = new Audio(url);
 
-    // 音声出力デバイスを設定
-    if (
-      currentAudioDevice &&
-      currentAudioDevice !== "default" &&
-      "setSinkId" in audio
-    ) {
+    // 音声出力デバイスを設定（既定デバイスは除外）
+    if (currentAudioDevice && "setSinkId" in audio) {
       try {
         await (audio as HTMLAudioElementWithSinkId).setSinkId(
           currentAudioDevice
@@ -402,6 +413,12 @@ export default function RecordingList({
   }
 
   async function handleDeviceSelect(deviceId: string) {
+    // 既定のデバイスIDは設定しない（状態不整合を防ぐため）
+    if (deviceId === "default" || deviceId === "") {
+      console.warn("既定のデバイスIDは設定できません");
+      return;
+    }
+
     setCurrentAudioDevice(deviceId);
     localStorage.setItem("recordingListAudioDeviceId", deviceId);
 
@@ -428,6 +445,13 @@ export default function RecordingList({
     } finally {
       setIsRefreshing(false);
     }
+  }
+
+  async function handleVolumeAnalysisComplete() {
+    // 音量最適化が完了したら、親コンポーネントに通知
+    // これによりループ再生側でもLUFS値の更新を検出できる
+    await handleRefresh();
+    onAnalysisComplete?.();
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -458,8 +482,9 @@ export default function RecordingList({
       await reorderPlaylistRecordings(playlistId, recordingIds);
       console.log("並び替え保存成功");
 
-      // 成功時はUIが既に更新されているので、onUpdateは呼ばない
-      // これによりページリロードを防ぐ
+      // 親コンポーネントに並び替えを通知（ページ全体のリフレッシュを避ける）
+      // これによりループ再生側でも並び替えを検出できる
+      onRecordingReordered?.(newRecordings);
     } catch (err) {
       console.error("並び替えエラー:", err);
       alert("並び替えに失敗しました");
@@ -530,9 +555,9 @@ export default function RecordingList({
                 音声をアップロード
               </Button>
             )}
-            {showDeviceList && (
+            {showDeviceList && audioDevices.length > 0 && (
               <Select
-                value={currentAudioDevice || "default"}
+                value={currentAudioDevice || undefined}
                 onValueChange={handleDeviceSelect}
               >
                 <SelectTrigger className="w-[200px]">
@@ -624,7 +649,7 @@ export default function RecordingList({
         recordings={recordings}
         open={volumeAnalyzerOpen}
         onOpenChange={setVolumeAnalyzerOpen}
-        onAnalysisComplete={handleRefresh}
+        onAnalysisComplete={handleVolumeAnalysisComplete}
       />
 
       {/* 文字起こしモーダル */}
