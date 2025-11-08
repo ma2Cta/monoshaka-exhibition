@@ -19,7 +19,7 @@ interface TranscriptionModalProps {
   recordings: Recording[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTranscriptionComplete: () => void;
+  onTranscriptionComplete?: () => void | Promise<void>;
 }
 
 export default function TranscriptionModal({
@@ -39,6 +39,12 @@ export default function TranscriptionModal({
   const recordingsNeedTranscription = recordings.filter(
     (r) => !r.transcription || r.transcription.trim() === ''
   );
+
+  // ファイルパスからファイル名のみを抽出
+  const getFileName = (filePath: string): string => {
+    const parts = filePath.split('/');
+    return parts[parts.length - 1] || filePath;
+  };
 
   async function transcribeAudio(recordingId: string, filePath: string): Promise<string> {
     const response = await fetch('/api/transcribe', {
@@ -100,9 +106,19 @@ export default function TranscriptionModal({
     setIsTranscribing(false);
     setCurrentFile('');
 
-    // 完了後に必ずコールバックを呼ぶ（親コンポーネントでデータを再取得）
-    console.log(`文字起こし完了: 成功 ${completedCount}件、失敗 ${failedCount}件`);
-    onTranscriptionComplete();
+    // 完了後にコールバックを呼ぶ（親コンポーネントでデータを再取得）
+    await onTranscriptionComplete?.();
+
+    // 2秒後にモーダルを自動で閉じる
+    setTimeout(() => {
+      onOpenChange(false);
+      // モーダルを閉じた後、stateをリセット
+      setCompleted(0);
+      setFailed(0);
+      setProgress(0);
+      setCurrentFile('');
+      setError('');
+    }, 2000);
   }
 
   return (
@@ -153,9 +169,11 @@ export default function TranscriptionModal({
                     </div>
                   </div>
                   <Progress value={progress} className="h-2" />
-                  <p className="text-xs text-muted-foreground truncate">
-                    処理中: {currentFile}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">
+                      処理中: {getFileName(currentFile)}
+                    </p>
+                  </div>
                 </div>
               )}
 

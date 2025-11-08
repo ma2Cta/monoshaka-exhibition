@@ -10,7 +10,7 @@ interface HeaderProps {
   showNav?: boolean;
 }
 
-export default function Header({ showNav = true }: HeaderProps) {
+export default function Header({ showNav = false }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();

@@ -79,11 +79,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       const options: ExtendedAudioContextOptions = {};
       if (selectedAudioDeviceIdRef.current) {
         options.sinkId = selectedAudioDeviceIdRef.current;
-        console.log(`AudioContextをデバイス付きで作成: ${selectedAudioDeviceIdRef.current}`);
       }
 
       audioContextRef.current = new AudioContext(options);
-      console.log('AudioContextを作成しました');
     }
     return audioContextRef.current;
   }, []);
@@ -96,7 +94,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     ): { source: MediaElementAudioSourceNode; gain: GainNode } | null => {
       // LUFS値がない場合はWeb Audio APIを使用しない（通常のAudio要素のまま）
       if (recording.lufs == null) {
-        console.log(`音量メタデータがないため、通常再生: ${recording.file_path}`);
         return null;
       }
 
@@ -108,9 +105,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         // Gainだけ更新
         const gainValue = calculateGainFromLufs(recording.lufs);
         existingNodes.gain.gain.value = gainValue;
-        console.log(
-          `Gain更新: ${recording.file_path} - LUFS: ${recording.lufs}, Gain: ${gainValue.toFixed(2)}`
-        );
         return existingNodes;
       }
 
@@ -130,9 +124,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // LUFS値から適切なGain値を計算して設定
       const gainValue = calculateGainFromLufs(recording.lufs);
       gain.gain.value = gainValue;
-      console.log(
-        `音量ノーマライゼーション適用: ${recording.file_path} - LUFS: ${recording.lufs}, Gain: ${gainValue.toFixed(2)}`
-      );
 
       // ノードを接続: source → gain → destination
       source.connect(gain);
@@ -151,19 +142,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     const checkAudioOutputSupport = () => {
       const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
       const hasMediaDevices = 'mediaDevices' in navigator;
-      const hasSelectAudioOutput = hasMediaDevices && 'selectAudioOutput' in navigator.mediaDevices;
       const hasEnumerateDevices = hasMediaDevices && 'enumerateDevices' in navigator.mediaDevices;
-
-      console.log('Audio Output Devices API サポート確認:');
-      console.log('  - setSinkId:', hasSetsinkId);
-      console.log('  - mediaDevices:', hasMediaDevices);
-      console.log('  - selectAudioOutput:', hasSelectAudioOutput);
-      console.log('  - enumerateDevices:', hasEnumerateDevices);
 
       // setSinkIdとenumerateDevicesの両方が使えればサポートありとする
       // selectAudioOutputは必須ではない（代替UIで対応可能）
       const supported = hasSetsinkId && hasMediaDevices && hasEnumerateDevices;
-      console.log('  - 総合サポート:', supported);
 
       setAudioOutputSupported(supported);
     };
@@ -173,12 +156,10 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   // Audio要素に音声出力デバイスを設定
   const setAudioSinkId = useCallback(async (audio: HTMLAudioElement) => {
     if (!audioOutputSupported) {
-      console.log('Audio Output Devices APIがサポートされていません');
       return;
     }
 
     if (!selectedAudioDeviceIdRef.current) {
-      console.log('デバイスが選択されていないため、既定のデバイスを使用します');
       return;
     }
 
@@ -186,14 +167,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // （AbortErrorが発生する）ため、スキップする
     const isConnectedToWebAudio = audioToNodesMap.current.has(audio);
     if (isConnectedToWebAudio) {
-      console.log('Web Audio APIに接続されているため、setSinkIdをスキップします（AudioContextのsinkIdが使用されます）');
       return;
     }
 
     try {
-      console.log(`音声出力デバイスを設定中: ${selectedAudioDeviceIdRef.current}`);
       await audio.setSinkId(selectedAudioDeviceIdRef.current);
-      console.log(`音声出力デバイスを設定しました: ${selectedAudioDeviceIdRef.current}`);
     } catch (err) {
       console.error(`音声出力デバイスの設定に失敗 (デバイスID: ${selectedAudioDeviceIdRef.current}):`, err);
       // エラーが発生してもselectedAudioDeviceIdRef.currentはクリアしない
@@ -205,7 +183,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const getAudioOutputDevices = useCallback(async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      console.log('全デバイス一覧:', devices.filter(d => d.kind === 'audiooutput'));
 
       // 既定のデバイス（default）を除外し、実際のデバイスのみを返す
       const audioOutputs = devices.filter(device =>
@@ -213,8 +190,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         device.deviceId !== 'default' &&
         device.deviceId !== ''
       );
-      console.log('利用可能な音声出力デバイス（既定除く）:', audioOutputs);
-      console.log('フィルタリング後のデバイス数:', audioOutputs.length);
       return audioOutputs;
     } catch (err) {
       console.error('デバイス一覧の取得に失敗:', err);
@@ -232,12 +207,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     try {
       // selectAudioOutputが利用可能な場合はそれを使用
       if ('selectAudioOutput' in navigator.mediaDevices) {
-        console.log('selectAudioOutputを使用してデバイス選択ダイアログを表示します');
         const device = await navigator.mediaDevices.selectAudioOutput();
         selectedAudioDeviceIdRef.current = device.deviceId;
         setCurrentAudioDevice(device.deviceId);
-
-        console.log(`選択されたデバイス: ${device.label} (${device.deviceId})`);
 
         // UIに選択されたデバイスを通知
         const deviceName = device.label || `デバイス ${device.deviceId.substring(0, 8)}...`;
@@ -254,11 +226,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       } else {
         // selectAudioOutputが使えない場合はenumerateDevicesを使用
         // この場合、UIコンポーネント側でデバイス一覧を表示する必要がある
-        console.log('selectAudioOutputが利用できないため、enumerateDevicesを使用してカスタムダイアログを表示します');
         const devices = await getAudioOutputDevices();
 
         if (devices.length > 0) {
-          console.log(`${devices.length}個の音声出力デバイスが見つかりました:`, devices.map(d => d.label || d.deviceId));
           // カスタムイベントを発行してUIに通知
           const event = new CustomEvent('audioOutputDeviceListAvailable', { detail: devices });
           window.dispatchEvent(event);
@@ -268,9 +238,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       }
     } catch (err) {
       if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          console.log('ユーザーがデバイス選択をキャンセルしました');
-        } else {
+        if (err.name !== 'NotAllowedError') {
           console.error('音声出力デバイスの選択に失敗:', err);
         }
       }
@@ -279,8 +247,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
   // デバイスIDを直接設定する関数（UI側から呼び出される）
   const setOutputDevice = useCallback(async (deviceId: string) => {
-    console.log(`setOutputDevice呼び出し: ${deviceId}`);
-
     // 既定のデバイスIDは設定しない（状態不整合を防ぐため）
     if (deviceId === 'default' || deviceId === '') {
       console.warn('既定のデバイスIDは設定できません');
@@ -290,17 +256,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     selectedAudioDeviceIdRef.current = deviceId;
     setCurrentAudioDevice(deviceId);
 
-    console.log(`デバイスを設定: ${deviceId}`);
-    console.log(`selectedAudioDeviceIdRef.current: ${selectedAudioDeviceIdRef.current}`);
-
     // AudioContextにもデバイスを設定（Web Audio API使用時に必要）
     if (audioContextRef.current && 'setSinkId' in audioContextRef.current) {
       try {
-        console.log('AudioContextにデバイスを設定中');
         const extendedContext = audioContextRef.current as ExtendedAudioContext;
         if (extendedContext.setSinkId) {
           await extendedContext.setSinkId(deviceId);
-          console.log('AudioContextにデバイスを設定しました');
         }
       } catch (err) {
         console.error('AudioContextのデバイス設定に失敗:', err);
@@ -309,17 +270,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 現在再生中のAudio要素に適用（Web Audio API未接続の場合のみ）
     if (currentAudioRef.current) {
-      console.log('currentAudioRef.currentにデバイスを設定中');
       await setAudioSinkId(currentAudioRef.current);
-    } else {
-      console.log('currentAudioRef.currentが存在しません');
     }
 
     if (nextAudioRef.current) {
-      console.log('nextAudioRef.currentにデバイスを設定中');
       await setAudioSinkId(nextAudioRef.current);
-    } else {
-      console.log('nextAudioRef.currentが存在しません');
     }
   }, [setAudioSinkId]);
 
@@ -332,7 +287,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const buildPlaybackOrder = useCallback((recordings: Recording[]) => {
     // 単純に0からrecordings.length-1までの配列を作成
     const order = recordings.map((_, index) => index);
-    console.log('再生順序を計算しました:', order);
     return order;
   }, []);
 
@@ -357,14 +311,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       if (playbackSnapshotRef.current && !hasCompletedPlaybackRef.current) {
         // 再生中は何も更新しない
         // recordingsRefもスナップショットを保持し続ける
-        console.log('再生中のため、プレイリストの変更を無視します');
         setError(null);
         return;
       }
 
       // プレイリストが完了した後、新しいプレイリストを取得
       if (hasCompletedPlaybackRef.current) {
-        console.log('プレイリストが一周しました。新しいプレイリストを取得:', data.length);
         playbackSnapshotRef.current = [...data];
         recordingsRef.current = [...data];
         setRecordings(data);
@@ -372,7 +324,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         // 新しいプレイリストの再生順序を事前計算
         playbackOrderRef.current = buildPlaybackOrder(data);
         playbackPositionRef.current = 0;
-        console.log('新しい再生順序を設定:', playbackOrderRef.current);
 
         // hasCompletedPlaybackRefとindexの更新はswitchToNextTrackで行う
       } else {
@@ -396,7 +347,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // プレイリストが一周した場合（再生順序配列の最後に達した場合）
     if (nextPosition >= playbackOrderRef.current.length) {
-      console.log('プレイリストが一周しました。新しいプレイリストに更新します。');
       hasCompletedPlaybackRef.current = true;
       playbackSnapshotRef.current = null;
       // 一周完了時はインデックスを更新しない（switchToNextTrackで処理）
@@ -409,15 +359,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     const actualIndex = playbackOrderRef.current[nextPosition];
     currentIndexRef.current = actualIndex;
     setCurrentIndex(actualIndex);
-
-    console.log(`次のトラックに移動: 再生位置 ${nextPosition}/${playbackOrderRef.current.length}, 実際のインデックス ${actualIndex}`);
   }, []);
 
   // 次のトラックをプリロード（再生順序配列を参照）
   const preloadNextTrack = useCallback(async () => {
     // プレイリスト一周完了時はプリロードしない（古いプレイリストのファイルをロードしないため）
     if (hasCompletedPlaybackRef.current) {
-      console.log('プレイリスト一周完了のため、プリロードをスキップします');
       return;
     }
 
@@ -428,7 +375,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 次の再生位置が再生順序配列の範囲外の場合（プレイリスト一周する場合）、プリロードしない
     if (nextPosition >= playbackOrderRef.current.length) {
-      console.log('次のトラックがプレイリストの最後なので、プリロードをスキップします');
       return;
     }
 
@@ -463,7 +409,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     const url = getRecordingUrl(nextRecording.file_path);
     nextAudioRef.current.src = url;
     nextAudioRef.current.load();
-    console.log(`次のトラックをプリロード: 再生位置 ${nextPosition}/${playbackOrderRef.current.length}, 実際のインデックス ${nextIndex}`);
   }, [setAudioSinkId, connectAudioToWebAudio]);
 
   // 次のトラックに切り替えて再生
@@ -474,16 +419,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // プレイリスト一周完了フラグをチェック
     if (hasCompletedPlaybackRef.current) {
-      // 新しいプレイリストが読み込まれるまで待つ
-      console.log('プレイリスト一周完了。新しいプレイリストの読み込みを待機中...');
-
       // 古いプリロードをクリア（古いプレイリストのファイルが残っている可能性があるため）
       if (nextAudioRef.current) {
         nextAudioRef.current.pause();
         nextAudioRef.current.src = '';
         nextAudioRef.current.onended = null;
         nextAudioRef.current.onerror = null;
-        console.log('プリロード済みの古いトラックをクリアしました');
       }
 
       // fetchRecordingsを呼び出して新しいプレイリストを取得
@@ -501,7 +442,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
       // 新しいプレイリストで最初のトラックを再生
       if (recordingsRef.current.length > 0 && playTrackRef.current) {
-        console.log('新しいプレイリストで再生を再開:', recordingsRef.current.length, '再生位置: 0, インデックス:', firstIndex);
         // 少し待機してから再生（state更新が確実に反映されるように）
         await new Promise(resolve => setTimeout(resolve, 100));
         await playTrackRef.current(firstIndex);
@@ -517,8 +457,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     // moveToNextTrackでhasCompletedPlaybackRef.currentがtrueになった場合、
     // 即座に新しいプレイリストをロードして再生を継続
     if (hasCompletedPlaybackRef.current) {
-      console.log('プレイリスト一周完了フラグが立ちました。即座に新しいプレイリストをロードします');
-
       // 古いプリロードをクリア
       if (nextAudioRef.current) {
         nextAudioRef.current.pause();
@@ -541,7 +479,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
       // 新しいプレイリストで最初のトラックを再生
       if (recordingsRef.current.length > 0 && playTrackRef.current) {
-        console.log('新しいプレイリストで再生を継続:', recordingsRef.current.length, '再生位置: 0, インデックス:', firstIndex);
         await new Promise(resolve => setTimeout(resolve, 100));
         await playTrackRef.current(firstIndex);
       }
@@ -626,7 +563,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     audio.onerror = (e) => {
       console.error('Audio error:', e);
-      console.log('削除された可能性のある音声の再生をスキップします');
       // エラーが発生した場合は次のトラックにスキップ
       setTimeout(() => {
         switchToNextTrack();
@@ -639,11 +575,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     audio.onpause = () => {
       setIsPlaying(false);
-    };
-
-    // 音声のロード開始時にエラーをキャッチ
-    audio.onloadstart = () => {
-      console.log('音声の読み込みを開始しました');
     };
   }, [switchToNextTrack]);
 
@@ -704,8 +635,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   // 外部からrecordingsが渡された場合は、それをrecordings stateに設定
   useEffect(() => {
     if (externalRecordings) {
-      console.log('外部recordingsを使用:', externalRecordings.length);
-
       // 前回の録音数と比較
       const previousCount = recordingsRef.current.length;
       const newCount = externalRecordings.length;
@@ -716,8 +645,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
       // 再生中で、録音が増えた場合（新規追加）、再生順序配列に追加
       if (playbackSnapshotRef.current && newCount > previousCount) {
-        console.log(`新しい録音が追加されました: ${previousCount} → ${newCount}`);
-
         // スナップショットも更新（新しい録音を含める）
         playbackSnapshotRef.current = [...externalRecordings];
 
@@ -727,13 +654,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
           addedIndexes.push(i);
         }
         playbackOrderRef.current = [...playbackOrderRef.current, ...addedIndexes];
-        console.log('再生順序配列を更新:', playbackOrderRef.current);
-
-        // 次のトラックをプリロード（追加された最初のトラックがまだプリロードされていない場合）
-        if (!hasCompletedPlaybackRef.current && !isSwitching.current) {
-          // プリロード処理は既存のpreloadNextTrackが次回の切り替え時に自動的に行う
-          console.log('次の切り替え時に新しい録音がプリロードされます');
-        }
       }
 
       // 録音の順序が変わった場合やLUFS値が変わった場合の処理
@@ -745,20 +665,14 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         const isReordered = oldIds.some((id, index) => id !== newIds[index]);
 
         if (isReordered) {
-          console.log('録音が並び替えられました');
-          console.log('旧順序:', oldIds);
-          console.log('新順序:', newIds);
-
           // スナップショットを更新
           playbackSnapshotRef.current = [...externalRecordings];
 
           // 現在再生中の録音のIDを取得
           const currentRecordingId = recordingsRef.current[currentIndexRef.current]?.id;
-          console.log('現在再生中の録音ID:', currentRecordingId);
 
           // 新しい順序での再生順序配列を再構築
           playbackOrderRef.current = buildPlaybackOrder(externalRecordings);
-          console.log('新しい再生順序配列:', playbackOrderRef.current);
 
           // 現在再生中の録音の新しいインデックスを特定
           const newCurrentIndex = externalRecordings.findIndex((r) => r.id === currentRecordingId);
@@ -770,7 +684,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
             const newPosition = playbackOrderRef.current.findIndex((idx) => idx === newCurrentIndex);
             if (newPosition !== -1) {
               playbackPositionRef.current = newPosition;
-              console.log(`並び替え後の再生位置: ${newPosition}, インデックス: ${newCurrentIndex}`);
             }
           }
 
@@ -788,9 +701,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
               const expectedPath = newNextRecording ? getRecordingUrl(newNextRecording.file_path) : null;
 
               if (preloadedPath !== expectedPath) {
-                console.log('プリロード済みの録音が並び替え後の次の録音と異なるため、再プリロードします');
-                console.log('プリロード済み:', preloadedPath);
-                console.log('期待される録音:', expectedPath);
                 nextAudioRef.current.pause();
                 nextAudioRef.current.src = '';
 
@@ -798,12 +708,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
                 if (!isSwitching.current && !hasCompletedPlaybackRef.current) {
                   preloadNextTrack();
                 }
-              } else {
-                console.log('プリロード済みの録音が並び替え後も正しいため、そのまま使用します');
               }
             } else {
               // 次の録音がない場合（最後の録音）はプリロードをクリア
-              console.log('並び替え後は次の録音がないため、プリロードをクリアします');
               nextAudioRef.current.pause();
               nextAudioRef.current.src = '';
             }
@@ -832,8 +739,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         }
 
         if (lufsChanges.length > 0) {
-          console.log('LUFS値が変更されました:', lufsChanges);
-
           // スナップショットを更新
           playbackSnapshotRef.current = [...externalRecordings];
 
@@ -843,7 +748,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
           if (currentChange && currentAudioRef.current) {
             const newRecording = externalRecordings[currentChange.index];
-            console.log(`現在再生中の録音のLUFS値が変更されました: ${currentChange.oldLufs} → ${currentChange.newLufs}`);
 
             // connectAudioToWebAudioを再度呼び出してGainノードを更新
             // この関数は既にノードが存在する場合はGainのみを更新する
@@ -860,7 +764,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
               if (nextRecording) {
                 const nextChange = lufsChanges.find((c) => c.id === nextRecording.id);
                 if (nextChange) {
-                  console.log(`プリロード済みの録音のLUFS値が変更されました: ${nextChange.oldLufs} → ${nextChange.newLufs}`);
                   // connectAudioToWebAudioを再度呼び出してGainノードを更新
                   connectAudioToWebAudio(nextAudioRef.current, nextRecording);
                 }
@@ -873,13 +776,10 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
       // 録音が削除された場合（newCount < previousCount）の処理
       if (newCount < previousCount && playbackSnapshotRef.current) {
-        console.log(`録音が削除されました: ${previousCount} → ${newCount}`);
-
         // 削除された録音のIDを特定
         const deletedRecordings = recordingsRef.current.filter(
           (oldRec) => !externalRecordings.some((newRec) => newRec.id === oldRec.id)
         );
-        console.log('削除された録音:', deletedRecordings.map((r) => r.id));
 
         // スナップショットを更新
         playbackSnapshotRef.current = [...externalRecordings];
@@ -900,13 +800,11 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
           });
 
         playbackOrderRef.current = newPlaybackOrder;
-        console.log('更新後の再生順序配列:', playbackOrderRef.current);
 
         // 現在の再生位置を調整（削除されたインデックスより大きい場合は減算）
         const currentActualIndex = currentIndexRef.current;
         if (deletedIndexes.includes(currentActualIndex)) {
           // 現在再生中の録音が削除された場合は、次のトラックにスキップ
-          console.log('現在再生中の録音が削除されました。次のトラックにスキップします。');
           // 現在のオーディオを停止
           if (currentAudioRef.current) {
             currentAudioRef.current.pause();
@@ -927,7 +825,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
           const newPosition = playbackOrderRef.current.findIndex((idx) => idx === newCurrentIndex);
           if (newPosition !== -1) {
             playbackPositionRef.current = newPosition;
-            console.log(`再生位置を調整: ${newPosition}`);
           }
         }
 
@@ -943,7 +840,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
               return recordingsRef.current.findIndex((r) => r.id === deletedRec.id) === nextIndex + deletedIndexes.filter((delIdx) => delIdx <= nextIndex).length;
             });
             if (wasNextDeleted || !nextRecording) {
-              console.log('プリロード済みの録音が削除されたため、クリアします');
               nextAudioRef.current.pause();
               nextAudioRef.current.src = '';
               // 新しい次の録音をプリロード
@@ -969,14 +865,12 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 再生していない場合のみ、初期スナップショットを作成
     if (recordings.length > 0 && !playbackSnapshotRef.current) {
-      console.log('プレイリストのスナップショットを準備:', recordings.length);
       playbackSnapshotRef.current = [...recordings];
       recordingsRef.current = [...recordings];
 
       // 初期再生順序を計算
       playbackOrderRef.current = buildPlaybackOrder(recordings);
       playbackPositionRef.current = 0;
-      console.log('初期再生順序を設定:', playbackOrderRef.current);
     }
   }, [recordings, buildPlaybackOrder]);
 
@@ -1018,8 +912,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
   // 再生をリセット
   const resetPlayback = useCallback(() => {
-    console.log('再生をリセットします');
-
     // オーディオを停止
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -1055,17 +947,13 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const startPlayback = useCallback(async () => {
     if (recordings.length === 0) return;
 
-    console.log('再生を開始/再開します:', recordings.length);
-
     // AudioContextをresumeする（ユーザーインタラクション後に必要）
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       await audioContextRef.current.resume();
-      console.log('AudioContextをresumeしました');
     }
 
     // 一時停止から再開の場合
     if (hasStartedPlayback.current) {
-      console.log('一時停止から再開します。現在のインデックス:', currentIndexRef.current);
       // 現在のAudio要素がある場合は再開
       if (currentAudioRef.current && currentAudioRef.current.src) {
         currentAudioRef.current.play().catch((err) => {
@@ -1087,7 +975,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       // 再生順序を計算
       playbackOrderRef.current = buildPlaybackOrder(recordings);
       playbackPositionRef.current = 0;
-      console.log('再生開始時の再生順序を設定:', playbackOrderRef.current);
     }
 
     hasStartedPlayback.current = true;

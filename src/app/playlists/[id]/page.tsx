@@ -3,25 +3,23 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getPlaylistById, getPlaylistRecordings } from "@/lib/supabase";
-import RecordingList from "@/components/admin/RecordingList";
-import { PlaybackControl } from "@/components/admin/PlaybackControl";
-import { AudioUploadModal } from "@/components/admin/AudioUploadModal";
-import { AdminRecorder } from "@/components/admin/AdminRecorder";
+import RecordingList from "@/components/playlist/RecordingList";
+import { PlaybackControl } from "@/components/playback/PlaybackControl";
+import { UploadModal } from "@/components/audio/UploadModal";
+import { Recorder } from "@/components/recording/Recorder";
 import Header from "@/components/layout/Header";
 import type { Recording } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollToTop } from "@/components/ui/scroll-to-top";
-import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
-export default function PlaylistDetailV2Page() {
+export default function PlaylistDetailPage() {
   const router = useRouter();
   const params = useParams();
   const playlistId = params.id as string;
 
   const [playlistName, setPlaylistName] = useState("");
-  const [playlistIsActive, setPlaylistIsActive] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -41,7 +39,6 @@ export default function PlaylistDetailV2Page() {
         getPlaylistRecordings(playlistId),
       ]);
       setPlaylistName(playlist.name);
-      setPlaylistIsActive(playlist.is_active);
       setRecordings(recordingsData);
     } catch (err) {
       const message =
@@ -60,7 +57,7 @@ export default function PlaylistDetailV2Page() {
   }
 
   function handleRecordingAdded(recording: Recording) {
-    // AdminRecorderから録音が追加された場合
+    // Recorderから録音が追加された場合
     // ページ全体をリフレッシュせず、ローカルstateのみを更新
     setRecordings((prev) => [...prev, recording]);
   }
@@ -83,6 +80,28 @@ export default function PlaylistDetailV2Page() {
     // 音量最適化が完了した場合
     // データベースから最新のLUFS値を取得
     // これによりPlaybackControl/usePlayerでもLUFS値の更新を検出できる
+    try {
+      const recordingsData = await getPlaylistRecordings(playlistId);
+      setRecordings(recordingsData);
+    } catch (err) {
+      console.error("録音データの再取得に失敗:", err);
+    }
+  }
+
+  async function handleTranscriptionComplete() {
+    // 文字起こしが完了した場合
+    // データベースから最新の文字起こしデータを取得
+    try {
+      const recordingsData = await getPlaylistRecordings(playlistId);
+      setRecordings(recordingsData);
+    } catch (err) {
+      console.error("録音データの再取得に失敗:", err);
+    }
+  }
+
+  async function handleRecordingsUpdate() {
+    // 再読み込みボタンが押された場合
+    // ページ全体をリロードせず、データベースから最新のデータを取得してstateのみを更新
     try {
       const recordingsData = await getPlaylistRecordings(playlistId);
       setRecordings(recordingsData);
@@ -124,21 +143,10 @@ export default function PlaylistDetailV2Page() {
         <div className="space-y-6">
           {/* ヘッダー */}
           <div>
-            <div className="flex items-start justify-between gap-4 mb-2">
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold">{playlistName}</h1>
-                {playlistIsActive && (
-                  <Badge
-                    variant="default"
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <CheckCircle2 className="mr-1 h-3 w-3" />
-                    有効
-                  </Badge>
-                )}
-              </div>
+            <div className="flex items-start gap-4 mb-2">
+              <h1 className="text-3xl font-bold">{playlistName}</h1>
               <Button
-                onClick={() => router.push("/admin/v2")}
+                onClick={() => router.push("/")}
                 variant="outline"
                 size="sm"
                 className="shrink-0"
@@ -156,7 +164,7 @@ export default function PlaylistDetailV2Page() {
               recordingCount={recordings.length}
               recordings={recordings}
             />
-            <AdminRecorder
+            <Recorder
               playlistId={playlistId}
               onRecordingAdded={handleRecordingAdded}
             />
@@ -166,19 +174,20 @@ export default function PlaylistDetailV2Page() {
           <div>
             <RecordingList
               recordings={recordings}
-              onUpdate={loadPlaylistData}
+              onUpdate={handleRecordingsUpdate}
               playlistId={playlistId}
               onUploadRequest={() => setIsUploadModalOpen(true)}
               onRecordingDeleted={handleRecordingDeleted}
               onRecordingReordered={handleRecordingReordered}
               onAnalysisComplete={handleAnalysisComplete}
+              onTranscriptionComplete={handleTranscriptionComplete}
             />
           </div>
         </div>
       </div>
 
       {/* アップロードモーダル */}
-      <AudioUploadModal
+      <UploadModal
         playlistId={playlistId}
         open={isUploadModalOpen}
         onOpenChange={setIsUploadModalOpen}

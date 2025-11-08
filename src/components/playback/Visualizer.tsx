@@ -2,15 +2,15 @@
 
 import { useMemo } from 'react';
 
-interface CompactVisualizerProps {
+interface VisualizerProps {
   isPlaying: boolean;
 }
 
 /**
- * コンパクトな音声ビジュアライザー (150px × 40px)
+ * 音声ビジュアライザー (150px × 40px)
  * 再生中のみアニメーションが動きます
  */
-export function CompactVisualizer({ isPlaying }: CompactVisualizerProps) {
+export function Visualizer({ isPlaying }: VisualizerProps) {
   // 波形アニメーションの高さを固定（初回のみ生成）
   const waveHeights = useMemo(() => {
     return Array.from({ length: 10 }, () => Math.random() * 80 + 20);

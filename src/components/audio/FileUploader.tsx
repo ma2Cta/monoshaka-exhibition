@@ -12,7 +12,7 @@ import { uploadRecording, addRecordingToPlaylist } from '@/lib/supabase';
 import type { Recording } from '@/lib/types';
 import { analyzeAudioVolume, type VolumeMetadata } from '@/lib/audio-analysis';
 
-interface AudioFileUploaderProps {
+interface FileUploaderProps {
   playlistId: string;
   onUploadComplete: (newRecordings: Recording[]) => void;
 }
@@ -29,7 +29,7 @@ interface FileItem {
   audioUrl?: string;
 }
 
-export default function AudioFileUploader({ playlistId, onUploadComplete }: AudioFileUploaderProps) {
+export default function FileUploader({ playlistId, onUploadComplete }: FileUploaderProps) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [globalError, setGlobalError] = useState('');

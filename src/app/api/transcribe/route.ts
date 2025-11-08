@@ -37,23 +37,12 @@ export async function POST(request: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error('Supabase環境変数が見つかりません:', {
-        hasUrl: !!supabaseUrl,
-        hasKey: !!supabaseKey,
-        envVars: {
-          SUPABASE_URL: !!process.env.SUPABASE_URL,
-          NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-          SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-          SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
-        }
-      });
+      console.error('Supabase環境変数が見つかりません');
       return NextResponse.json(
         { error: "Supabase設定が見つかりません。環境変数SUPABASE_URLとSUPABASE_SERVICE_ROLE_KEYを確認してください。" },
         { status: 500 }
       );
     }
-
-    console.log('使用するSupabase URL:', supabaseUrl);
 
     // Supabase Admin Clientを作成（Service Role Keyを使用）
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -90,22 +79,11 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    console.log("文字起こし開始:", {
-      recordingId,
-      filePath,
-      fileSize: file.size,
-    });
-
     const transcription = await openai.audio.transcriptions.create({
       file: file,
       model: "whisper-1",
       language: "ja", // 日本語を指定
       response_format: "text",
-    });
-
-    console.log("文字起こし完了:", {
-      recordingId,
-      length: transcription.length,
     });
 
     // 3. データベースに保存（skipSaveがfalseの場合のみ）
@@ -122,10 +100,6 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-
-      console.log("データベース更新完了:", { recordingId });
-    } else {
-      console.log("データベース保存をスキップ:", { recordingId });
     }
 
     return NextResponse.json({
