@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Loader2, FileText, AlertCircle } from 'lucide-react';
-import { getRecordingUrl, updateRecordingTranscription } from '@/lib/supabase';
+import { updateRecordingTranscription } from '@/lib/supabase';
 import type { Recording } from '@/lib/types';
 
 interface TranscriptionModalProps {
@@ -40,11 +40,11 @@ export default function TranscriptionModal({
     (r) => !r.transcription || r.transcription.trim() === ''
   );
 
-  async function transcribeAudio(audioUrl: string): Promise<string> {
+  async function transcribeAudio(recordingId: string, filePath: string): Promise<string> {
     const response = await fetch('/api/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioUrl }),
+      body: JSON.stringify({ recordingId, filePath }),
     });
 
     if (!response.ok) {
@@ -79,11 +79,8 @@ export default function TranscriptionModal({
       setCurrentFile(recording.file_path);
 
       try {
-        // 音声URLを取得
-        const url = getRecordingUrl(recording.file_path);
-
         // 文字起こし実行
-        const transcription = await transcribeAudio(url);
+        const transcription = await transcribeAudio(recording.id, recording.file_path);
 
         // データベースを更新
         await updateRecordingTranscription(recording.id, transcription);
@@ -110,7 +107,7 @@ export default function TranscriptionModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -142,13 +139,18 @@ export default function TranscriptionModal({
 
               {isTranscribing && (
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      {completed + failed} / {recordingsNeedTranscription.length} ファイル
-                    </span>
-                    <span className="text-muted-foreground">
-                      成功: {completed}件 • 失敗: {failed}件
-                    </span>
+                  <div className="flex flex-col gap-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        進捗: {completed + failed} / {recordingsNeedTranscription.length} ファイル
+                      </span>
+                      <span className="text-muted-foreground">
+                        {Math.round(progress)}%
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      成功: {completed}件 / 失敗: {failed}件
+                    </div>
                   </div>
                   <Progress value={progress} className="h-2" />
                   <p className="text-xs text-muted-foreground truncate">
