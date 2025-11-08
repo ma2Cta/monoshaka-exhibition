@@ -7,6 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Mic, Square, Send, CheckCircle2, Keyboard } from 'lucide-react';
 import type { Recording, Playlist } from '@/lib/types';
 
+// webkitAudioContextの型定義
+interface WindowWithWebkit extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 export default function AudioRecorderWithFeedback() {
   const {
     state,
@@ -25,14 +30,92 @@ export default function AudioRecorderWithFeedback() {
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success'>('idle');
   const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
 
-  // 音声フィードバック用の関数
+  // スピーカー選択関連のstate
+  const [availableOutputDevices, setAvailableOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState<string>('');
+  const [audioOutputSupported, setAudioOutputSupported] = useState<boolean>(false);
+
+  // 共有のAudioContextを管理
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // スピーカーデバイス一覧を取得
+  const fetchAudioOutputDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+      setAvailableOutputDevices(audioOutputs);
+      console.log('利用可能なスピーカーデバイス:', audioOutputs);
+
+      // localStorageから保存されたデバイスIDを復元
+      const savedDeviceId = localStorage.getItem('recordingAudioOutputDeviceId');
+      if (savedDeviceId && audioOutputs.some(d => d.deviceId === savedDeviceId)) {
+        setSelectedOutputDeviceId(savedDeviceId);
+      } else if (audioOutputs.length > 0) {
+        // デフォルトデバイスを選択
+        setSelectedOutputDeviceId(audioOutputs[0].deviceId);
+      }
+    } catch (error) {
+      console.error('スピーカーデバイス一覧の取得に失敗:', error);
+    }
+  }, []);
+
+  // AudioContextを取得または作成
+  const getAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as WindowWithWebkit).webkitAudioContext!)();
+    }
+    return audioContextRef.current;
+  }, []);
+
+  // AudioContextのsinkIdを設定
+  const setAudioContextSinkId = useCallback(async (deviceId: string) => {
+    try {
+      const context = getAudioContext();
+      if ('setSinkId' in context) {
+        await (context as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(deviceId);
+        console.log(`AudioContextの出力デバイスを設定: ${deviceId}`);
+      }
+    } catch (error) {
+      console.error('AudioContextの出力デバイス設定に失敗:', error);
+    }
+  }, [getAudioContext]);
+
+  // スピーカーデバイスを変更
+  const handleOutputDeviceChange = useCallback(async (deviceId: string) => {
+    setSelectedOutputDeviceId(deviceId);
+    localStorage.setItem('recordingAudioOutputDeviceId', deviceId);
+    await setAudioContextSinkId(deviceId);
+  }, [setAudioContextSinkId]);
+
+  // Audio Output Devices APIのサポートを確認
+  useEffect(() => {
+    const checkAudioOutputSupport = () => {
+      const hasSetsinkId = 'setSinkId' in HTMLAudioElement.prototype;
+      const hasMediaDevices = 'mediaDevices' in navigator;
+      const hasEnumerateDevices = hasMediaDevices && 'enumerateDevices' in navigator.mediaDevices;
+
+      const supported = hasSetsinkId && hasMediaDevices && hasEnumerateDevices;
+      setAudioOutputSupported(supported);
+
+      if (supported) {
+        fetchAudioOutputDevices();
+      }
+    };
+
+    checkAudioOutputSupport();
+  }, [fetchAudioOutputDevices]);
+
+  // 選択されたデバイスが変更されたらAudioContextに適用
+  useEffect(() => {
+    if (selectedOutputDeviceId) {
+      setAudioContextSinkId(selectedOutputDeviceId);
+    }
+  }, [selectedOutputDeviceId, setAudioContextSinkId]);
+
+  // 音声フィードバック用の関数（共有AudioContextを使用）
   const playBeep = useCallback((frequency: number, duration: number, volume: number = 0.3) => {
     try {
-      // webkitAudioContextの型定義
-      interface WindowWithWebkit extends Window {
-        webkitAudioContext?: typeof AudioContext;
-      }
-      const audioContext = new (window.AudioContext || (window as WindowWithWebkit).webkitAudioContext!)();
+      const audioContext = getAudioContext();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -47,13 +130,31 @@ export default function AudioRecorderWithFeedback() {
 
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + duration);
-
-      // クリーンアップ
-      setTimeout(() => {
-        audioContext.close();
-      }, duration * 1000 + 100);
     } catch (error) {
       console.error('ビープ音の再生エラー:', error);
+    }
+  }, [getAudioContext]);
+
+  // テキスト読み上げ用の関数
+  const playTextToSpeech = useCallback((text: string) => {
+    try {
+      if ('speechSynthesis' in window) {
+        // 既存の読み上げをキャンセル
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ja-JP'; // 日本語
+        utterance.rate = 1.0; // 読み上げ速度
+        utterance.pitch = 1.0; // 音の高さ
+        utterance.volume = 0.8; // 音量
+
+        window.speechSynthesis.speak(utterance);
+        console.log('音声読み上げ:', text);
+      } else {
+        console.warn('このブラウザはWeb Speech APIをサポートしていません');
+      }
+    } catch (error) {
+      console.error('音声読み上げエラー:', error);
     }
   }, []);
 
@@ -164,14 +265,28 @@ export default function AudioRecorderWithFeedback() {
 
   // 録音URLが変更されたら、オーディオ要素に設定して自動再生
   useEffect(() => {
-    if (audioRef.current && recordedUrl) {
-      audioRef.current.src = recordedUrl;
-      // 自動再生
-      audioRef.current.play().catch((error) => {
-        console.error('自動再生エラー:', error);
-      });
-    }
-  }, [recordedUrl]);
+    const setupAudioPlayback = async () => {
+      if (audioRef.current && recordedUrl) {
+        // スピーカーデバイスを設定
+        if (audioOutputSupported && selectedOutputDeviceId && 'setSinkId' in audioRef.current) {
+          try {
+            await (audioRef.current as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(selectedOutputDeviceId);
+            console.log('録音再生用のスピーカーを設定:', selectedOutputDeviceId);
+          } catch (error) {
+            console.error('録音再生用のスピーカー設定に失敗:', error);
+          }
+        }
+
+        audioRef.current.src = recordedUrl;
+        // 自動再生
+        audioRef.current.play().catch((error) => {
+          console.error('自動再生エラー:', error);
+        });
+      }
+    };
+
+    setupAudioPlayback();
+  }, [recordedUrl, audioOutputSupported, selectedOutputDeviceId]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -207,6 +322,37 @@ export default function AudioRecorderWithFeedback() {
       window.removeEventListener('keydown', handleKeyPress);
     };
   }, [state, uploadState, recordedBlob, stopRecording, handleStartRecording, handleUpload, playStopSound]);
+
+  // Bluetoothスピーカーのオートパワーオフを防ぐためのキープアライブ音声
+  useEffect(() => {
+    const KEEPALIVE_INTERVAL = 45000; // 45秒
+
+    const playKeepAliveMessage = () => {
+      // 録音中は音を鳴らさない（録音に混入しないように）
+      if (state !== 'recording') {
+        playTextToSpeech('録音を待機しています。');
+      }
+    };
+
+    const intervalId = setInterval(playKeepAliveMessage, KEEPALIVE_INTERVAL);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [state, playTextToSpeech]);
+
+  // クリーンアップ: AudioContextをクローズ、音声読み上げをキャンセル
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      // 音声読み上げが残っていればキャンセル
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
@@ -299,6 +445,25 @@ export default function AudioRecorderWithFeedback() {
                       {availableDevices.map((device) => (
                         <option key={device.deviceId} value={device.deviceId}>
                           {device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {audioOutputSupported && availableOutputDevices.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      スピーカーを選択
+                    </label>
+                    <select
+                      value={selectedOutputDeviceId}
+                      onChange={(e) => handleOutputDeviceChange(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100"
+                    >
+                      {availableOutputDevices.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `スピーカー ${device.deviceId.substring(0, 8)}...`}
                         </option>
                       ))}
                     </select>
