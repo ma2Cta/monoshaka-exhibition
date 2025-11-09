@@ -133,6 +133,27 @@ export function PlaybackControl({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioDevices, currentAudioDevice]);
 
+  // デバイスリストを再取得する関数
+  async function refreshDeviceList() {
+    if (!audioOutputSupported) return;
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioOutputs = devices.filter(
+        (device) =>
+          device.kind === "audiooutput" &&
+          device.deviceId !== "default" &&
+          device.deviceId !== ""
+      );
+      setAudioDevices(audioOutputs);
+      if (audioOutputs.length > 0) {
+        setShowDeviceList(true);
+      }
+    } catch (error) {
+      console.error("デバイス一覧の再取得に失敗:", error);
+    }
+  }
+
   async function handleDeviceSelect(deviceId: string) {
     await setOutputDevice(deviceId);
 
@@ -174,6 +195,11 @@ export function PlaybackControl({
             <Select
               value={currentAudioDevice || undefined}
               onValueChange={handleDeviceSelect}
+              onOpenChange={(open) => {
+                if (open) {
+                  refreshDeviceList();
+                }
+              }}
             >
               <SelectTrigger className="w-[200px]">
                 <Speaker className="h-4 w-4 mr-2" />

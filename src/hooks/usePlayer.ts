@@ -72,6 +72,50 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   // 選択された音声出力デバイスID
   const selectedAudioDeviceIdRef = useRef<string>('');
 
+  // 音声出力デバイス一覧を取得（既定のデバイスを除外）
+  const getAudioOutputDevices = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+
+      // 既定のデバイス（default）を除外し、実際のデバイスのみを返す
+      const audioOutputs = devices.filter(device =>
+        device.kind === 'audiooutput' &&
+        device.deviceId !== 'default' &&
+        device.deviceId !== ''
+      );
+      return audioOutputs;
+    } catch (err) {
+      console.error('デバイス一覧の取得に失敗:', err);
+      return [];
+    }
+  }, []);
+
+  // Audio要素に音声出力デバイスを設定
+  const setAudioSinkId = useCallback(async (audio: HTMLAudioElement) => {
+    if (!audioOutputSupported) {
+      return;
+    }
+
+    if (!selectedAudioDeviceIdRef.current) {
+      return;
+    }
+
+    // Web Audio APIに接続されているAudio要素はsetSinkIdを変更できない
+    // （AbortErrorが発生する）ため、スキップする
+    const isConnectedToWebAudio = audioToNodesMap.current.has(audio);
+    if (isConnectedToWebAudio) {
+      return;
+    }
+
+    try {
+      await audio.setSinkId(selectedAudioDeviceIdRef.current);
+    } catch (err) {
+      console.error(`音声出力デバイスの設定に失敗 (デバイスID: ${selectedAudioDeviceIdRef.current}):`, err);
+      // エラーが発生してもselectedAudioDeviceIdRef.currentはクリアしない
+      // （他のAudio要素では成功する可能性があるため）
+    }
+  }, [audioOutputSupported]);
+
   // AudioContextを初期化（遅延初期化）
   const getAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
@@ -151,50 +195,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
       setAudioOutputSupported(supported);
     };
     checkAudioOutputSupport();
-  }, []);
-
-  // Audio要素に音声出力デバイスを設定
-  const setAudioSinkId = useCallback(async (audio: HTMLAudioElement) => {
-    if (!audioOutputSupported) {
-      return;
-    }
-
-    if (!selectedAudioDeviceIdRef.current) {
-      return;
-    }
-
-    // Web Audio APIに接続されているAudio要素はsetSinkIdを変更できない
-    // （AbortErrorが発生する）ため、スキップする
-    const isConnectedToWebAudio = audioToNodesMap.current.has(audio);
-    if (isConnectedToWebAudio) {
-      return;
-    }
-
-    try {
-      await audio.setSinkId(selectedAudioDeviceIdRef.current);
-    } catch (err) {
-      console.error(`音声出力デバイスの設定に失敗 (デバイスID: ${selectedAudioDeviceIdRef.current}):`, err);
-      // エラーが発生してもselectedAudioDeviceIdRef.currentはクリアしない
-      // （他のAudio要素では成功する可能性があるため）
-    }
-  }, [audioOutputSupported]);
-
-  // 音声出力デバイス一覧を取得（既定のデバイスを除外）
-  const getAudioOutputDevices = useCallback(async () => {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-
-      // 既定のデバイス（default）を除外し、実際のデバイスのみを返す
-      const audioOutputs = devices.filter(device =>
-        device.kind === 'audiooutput' &&
-        device.deviceId !== 'default' &&
-        device.deviceId !== ''
-      );
-      return audioOutputs;
-    } catch (err) {
-      console.error('デバイス一覧の取得に失敗:', err);
-      return [];
-    }
   }, []);
 
   // 音声出力デバイスを選択

@@ -34,6 +34,7 @@ export function Recorder({ playlistId, onRecordingAdded }: RecorderProps) {
     stopRecording,
     reset,
     setSelectedDevice,
+    loadDevices,
   } = useRecorder();
 
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success'>('idle');
@@ -145,6 +146,11 @@ export function Recorder({ playlistId, onRecordingAdded }: RecorderProps) {
           <Select
             value={selectedDeviceId || ''}
             onValueChange={setSelectedDevice}
+            onOpenChange={(open) => {
+              if (open) {
+                loadDevices();
+              }
+            }}
           >
             <SelectTrigger className="w-full">
               <div className="flex items-center gap-2">
