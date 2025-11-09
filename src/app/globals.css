@@ -115,6 +115,12 @@ body {
   --sidebar-ring: oklch(0.552 0.016 285.938);
 }
 
+/* 再生停止時の警告背景色 */
+.playback-stopped {
+  --background: oklch(0.30 0.15 25);
+  transition: background-color 0.5s ease-in-out;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Play, Pause, Speaker } from "lucide-react";
+import { Play, Pause, Speaker, X } from "lucide-react";
 import { Visualizer } from "./Visualizer";
 import type { Recording } from "@/lib/types";
 
@@ -40,6 +40,7 @@ export function PlaybackControl({
   const [actualRecordingCount, setActualRecordingCount] =
     useState<number>(recordingCount);
   const [hasInitializedDevices, setHasInitializedDevices] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
 
   const {
     currentIndex,
@@ -53,6 +54,7 @@ export function PlaybackControl({
     setOutputDevice,
     currentAudioDevice,
     audioOutputSupported,
+    hasUnexpectedStop,
   } = usePlayer({ playlistId, recordings });
 
   // 外部recordingsが渡されていない場合のみ録音数を取得
@@ -123,6 +125,15 @@ export function PlaybackControl({
     };
   }, []);
 
+  // 再生停止検出時にモーダルを表示
+  useEffect(() => {
+    if (hasUnexpectedStop && !needsUserInteraction) {
+      setShowWarningModal(true);
+    } else {
+      setShowWarningModal(false);
+    }
+  }, [hasUnexpectedStop, needsUserInteraction]);
+
   // デバイスリストが取得されたら、一番上のデバイスを自動選択
   useEffect(() => {
     if (audioDevices.length > 0 && !currentAudioDevice) {
@@ -178,103 +189,131 @@ export function PlaybackControl({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span>ループ再生</span>
-            {isPlaying && <Badge variant="default">再生中</Badge>}
-            {!isPlaying &&
-              actualRecordingCount > 0 &&
-              !needsUserInteraction && (
-                <Badge variant="secondary">一時停止中</Badge>
-              )}
-          </div>
-          {/* デバイス選択 */}
-          {showDeviceList && audioDevices.length > 0 ? (
-            <Select
-              value={currentAudioDevice || undefined}
-              onValueChange={handleDeviceSelect}
-              onOpenChange={(open) => {
-                if (open) {
-                  refreshDeviceList();
-                }
-              }}
-            >
-              <SelectTrigger className="w-[200px]">
-                <Speaker className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="デバイスを選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {audioDevices.map((device) => (
-                  <SelectItem key={device.deviceId} value={device.deviceId}>
-                    {device.label || `デバイス ${device.deviceId.slice(0, 8)}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* エラー表示 */}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* 再生コントロール */}
-        <div className="flex items-center gap-4">
-          <Button
-            size="lg"
-            onClick={handlePlayPause}
-            disabled={actualRecordingCount === 0}
-            className="flex-shrink-0"
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="h-5 w-5 mr-2" />
-                一時停止
-              </>
-            ) : (
-              <>
-                <Play className="h-5 w-5 mr-2" />
-                {needsUserInteraction ? "再生開始" : "再開"}
-              </>
-            )}
-          </Button>
-
-          {/* 再生位置 */}
-          {totalCount > 0 && (
-            <div className="text-sm font-medium">
-              {currentIndex + 1} / {totalCount}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span>ループ再生</span>
+              {isPlaying && <Badge variant="default">再生中</Badge>}
+              {!isPlaying &&
+                actualRecordingCount > 0 &&
+                !needsUserInteraction && (
+                  <Badge variant="secondary">一時停止中</Badge>
+                )}
             </div>
+            {/* デバイス選択 */}
+            {showDeviceList && audioDevices.length > 0 ? (
+              <Select
+                value={currentAudioDevice || undefined}
+                onValueChange={handleDeviceSelect}
+                onOpenChange={(open) => {
+                  if (open) {
+                    refreshDeviceList();
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <Speaker className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="デバイスを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {audioDevices.map((device) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `デバイス ${device.deviceId.slice(0, 8)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* エラー表示 */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
-          {/* ビジュアライザー */}
-          <div className="ml-auto">
-            <Visualizer isPlaying={isPlaying} />
+          {/* 再生コントロール */}
+          <div className="flex items-center gap-4">
+            <Button
+              size="lg"
+              onClick={handlePlayPause}
+              disabled={actualRecordingCount === 0}
+              className="flex-shrink-0"
+            >
+              {isPlaying ? (
+                <>
+                  <Pause className="h-5 w-5 mr-2" />
+                  一時停止
+                </>
+              ) : (
+                <>
+                  <Play className="h-5 w-5 mr-2" />
+                  {needsUserInteraction ? "再生開始" : "再開"}
+                </>
+              )}
+            </Button>
+
+            {/* 再生位置 */}
+            {totalCount > 0 && (
+              <div className="text-sm font-medium">
+                {currentIndex + 1} / {totalCount}
+              </div>
+            )}
+
+            {/* ビジュアライザー */}
+            <div className="ml-auto">
+              <Visualizer isPlaying={isPlaying} />
+            </div>
+          </div>
+
+          {/* プログレスバー */}
+          {totalCount > 0 && (
+            <Progress
+              value={((currentIndex + 1) / totalCount) * 100}
+              className="h-2"
+            />
+          )}
+
+          {/* 録音がない場合のメッセージ */}
+          {actualRecordingCount === 0 && (
+            <Alert>
+              <AlertDescription>
+                このプレイリストには録音がありません。音声をアップロードしてください。
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 再生停止警告モーダル */}
+      {showWarningModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setShowWarningModal(false)}
+        >
+          <div
+            className="bg-red-600 text-white rounded-lg shadow-2xl p-12 max-w-2xl w-full mx-4 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Button
+              size="sm"
+              onClick={() => setShowWarningModal(false)}
+              className="absolute top-4 right-4 bg-white/20 hover:bg-white/30 text-white border-0"
+            >
+              <X className="h-6 w-6" />
+            </Button>
+            <div className="text-center space-y-6">
+              <div className="text-8xl font-bold animate-pulse">⚠️</div>
+              <h2 className="text-4xl font-bold">再生が停止しています</h2>
+              <p className="text-2xl">音声の再生が予期せず停止しました</p>
+            </div>
           </div>
         </div>
-
-        {/* プログレスバー */}
-        {totalCount > 0 && (
-          <Progress
-            value={((currentIndex + 1) / totalCount) * 100}
-            className="h-2"
-          />
-        )}
-
-        {/* 録音がない場合のメッセージ */}
-        {actualRecordingCount === 0 && (
-          <Alert>
-            <AlertDescription>
-              このプレイリストには録音がありません。音声をアップロードしてください。
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </>
   );
 }

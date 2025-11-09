@@ -27,6 +27,7 @@ interface UsePlayerReturn {
   setOutputDevice: (deviceId: string) => Promise<void>;
   currentAudioDevice: string | null;
   audioOutputSupported: boolean;
+  hasUnexpectedStop: boolean;
 }
 
 interface UsePlayerOptions {
@@ -43,6 +44,7 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(true);
   const [currentAudioDevice, setCurrentAudioDevice] = useState<string | null>(null);
   const [audioOutputSupported, setAudioOutputSupported] = useState<boolean>(false);
+  const [hasUnexpectedStop, setHasUnexpectedStop] = useState<boolean>(false);
 
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const nextAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -53,6 +55,8 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const hasStartedPlayback = useRef<boolean>(false);
   const switchToNextTrackRef = useRef<(() => Promise<void>) | null>(null);
   const playTrackRef = useRef<((index: number) => Promise<void>) | null>(null);
+  const stopDetectionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isIntentionalPauseRef = useRef<boolean>(false);
 
   // Web Audio API関連の参照
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -489,16 +493,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
 
     // 次のトラックが既にプリロードされていれば、それを再生
     if (nextAudioRef.current && nextAudioRef.current.src) {
-      // 現在のAudioを停止
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        // イベントリスナーをクリア
-        currentAudioRef.current.onended = null;
-        currentAudioRef.current.onerror = null;
-        currentAudioRef.current.onplaying = null;
-        currentAudioRef.current.onpause = null;
-      }
-
       // 参照を入れ替え（Audio要素のみ。ノードはWeakMapで管理されているので不要）
       const tempAudio = currentAudioRef.current;
       currentAudioRef.current = nextAudioRef.current;
@@ -530,9 +524,27 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
         };
       }
 
-      // 新しいcurrentAudioを再生
-      currentAudioRef.current.play().catch((err) => {
+      // 新しいcurrentAudioを再生開始（Gapless再生のため、古いAudioを停止する前に開始）
+      currentAudioRef.current.play().then(() => {
+        // 再生が開始されてから、古いAudioを停止
+        if (tempAudio) {
+          tempAudio.pause();
+          // イベントリスナーをクリア
+          tempAudio.onended = null;
+          tempAudio.onerror = null;
+          tempAudio.onplaying = null;
+          tempAudio.onpause = null;
+        }
+      }).catch((err) => {
         console.error('再生エラー:', err);
+        // エラーの場合も古いAudioを停止
+        if (tempAudio) {
+          tempAudio.pause();
+          tempAudio.onended = null;
+          tempAudio.onerror = null;
+          tempAudio.onplaying = null;
+          tempAudio.onpause = null;
+        }
       });
 
       // さらに次をプリロード（再生順序配列を参照）
@@ -896,6 +908,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const pausePlayback = useCallback(() => {
     console.log('再生を一時停止します');
 
+    // 意図的な一時停止フラグを立てる
+    isIntentionalPauseRef.current = true;
+
     // オーディオを一時停止（srcはクリアしない）
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -947,6 +962,9 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
   const startPlayback = useCallback(async () => {
     if (recordings.length === 0) return;
 
+    // 意図的な一時停止フラグをクリア
+    isIntentionalPauseRef.current = false;
+
     // AudioContextをresumeする（ユーザーインタラクション後に必要）
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       await audioContextRef.current.resume();
@@ -986,6 +1004,32 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     playTrack(firstIndex);
   }, [recordings, playTrack, buildPlaybackOrder]);
 
+  // 再生停止検出ロジック（2秒猶予）
+  useEffect(() => {
+    // 一度でも再生を開始した後（needsUserInteractionがfalse）かつ意図的な一時停止でない場合のみタイマーを起動
+    if (!isPlaying && !needsUserInteraction && !isIntentionalPauseRef.current) {
+      // 再生が停止したら2秒後にhasUnexpectedStopをtrueにする
+      stopDetectionTimerRef.current = setTimeout(() => {
+        setHasUnexpectedStop(true);
+      }, 2000);
+    } else {
+      // 再生が開始されたらタイマーをクリアし、hasUnexpectedStopをfalseにする
+      if (stopDetectionTimerRef.current) {
+        clearTimeout(stopDetectionTimerRef.current);
+        stopDetectionTimerRef.current = null;
+      }
+      setHasUnexpectedStop(false);
+    }
+
+    // クリーンアップ時にタイマーをクリア
+    return () => {
+      if (stopDetectionTimerRef.current) {
+        clearTimeout(stopDetectionTimerRef.current);
+        stopDetectionTimerRef.current = null;
+      }
+    };
+  }, [isPlaying, needsUserInteraction]);
+
   // クリーンアップ
   useEffect(() => {
     return () => {
@@ -1020,5 +1064,6 @@ export const usePlayer = (options?: UsePlayerOptions): UsePlayerReturn => {
     setOutputDevice,
     currentAudioDevice,
     audioOutputSupported,
+    hasUnexpectedStop,
   };
 };
